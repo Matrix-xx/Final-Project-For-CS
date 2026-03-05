@@ -2,12 +2,12 @@
     ViewData["Title"] = "StaffList";
 }
 
-
 <div class="content-header">
     <div class="container-fluid">
     </div>
 </div>
 
+<!-- Modern action button styles (same as Recipe.cshtml) -->
 <section class="content">
     <div class="container-fluid">
         <div class="card">
@@ -68,14 +68,12 @@
                             <td>${staff.role_id}</td>
                             <td>${badge}</td>
                             <td class="text-center">
-                                <div class="btn-group btn-group-sm" role="group">
-                                    <a class="btn btn-outline-primary" href="/Entry/Registration?id=${staff.id}" title="Edit">
-                                        <i class="fas fa-edit"></i>
-                                    </a>
-                                    <button class="btn btn-outline-danger" onclick="deleteStaff(${staff.id})" title="Delete">
-                                        <i class="fas fa-trash-alt"></i>
-                                    </button>
-                                </div>
+                                <button class="btn btn-warning btn-sm" onclick="window.location='/Entry/Registration?id=${staff.id}'" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="deleteStaff(${staff.id})" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
                             </td>
                         </tr>`;
                 });

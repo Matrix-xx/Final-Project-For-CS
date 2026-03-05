@@ -48,8 +48,17 @@ namespace FoodOutlet.Controllers
             return View();
         }
 
-        public IActionResult Recipe()
+        public IActionResult Recipe(int? id)
         {
+            if (id.HasValue)
+            {
+                // Load recipe by ID for editing
+                var recipes = _staff.GetAllRecipes();
+                var recipe = recipes.FirstOrDefault(r => r.id == id.Value);
+                ViewData["Title"] = recipe?.name ?? "Recipe";
+                return View(recipe);
+            }
+            ViewData["Title"] = "Recipe";
             return View();
         }
 
@@ -161,7 +170,6 @@ namespace FoodOutlet.Controllers
             };
         }
 
-
         // an alias endpoint matching the new service method name
         [HttpGet("api/get_resigned_staff")]
         public Dictionary<string, dynamic> GetResignedStaff()
@@ -183,6 +191,18 @@ namespace FoodOutlet.Controllers
         }
 
         #endregion
+
+        // recipe debug endpoint
+        [HttpGet("api/recipe_debug")]
+        public Dictionary<string, dynamic> RecipeDebug()
+        {
+            return new Dictionary<string, dynamic>
+            {
+                { "table", _staff.GetRecipeTableName() },
+                { "columns", _staff.GetRecipeColumns() },
+                { "count", _staff.GetRecipeCount() }
+            };
+        }
 
     }
 }

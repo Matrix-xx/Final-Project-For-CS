@@ -64,7 +64,7 @@
                 rows += '<tr>'+
                         '<td>'+num+'</td>'+
                         '<td>'+c.category_name+'</td>'+
-                        '<td class="text-center"><button class="btn btn-danger btn-sm" onclick="deleteCategory('+c.id+')">Delete</button></td>'+ 
+                        '<td class="text-center"><button class="btn btn-danger btn-sm" onclick="deleteCategory('+c.id+')"><i class="fas fa-trash"></i></button></td>'+
                         '</tr>';
             });
             $('#catTable tbody').html(rows);

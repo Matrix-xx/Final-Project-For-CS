@@ -5,7 +5,7 @@ using System.Net;
 using System.Linq.Expressions;
 
 namespace FoodOutlet.AppCode
-{
+{                       
     public class Staff
     {
         private readonly IDbConnectionFactory _connectionFactory;
@@ -150,7 +150,7 @@ namespace FoodOutlet.AppCode
                             id = rst["id"] == DBNull.Value ? 0 : Convert.ToInt32(rst["id"]),
                             name = rst["registration_name"]?.ToString() ?? "",
                             email = hasEmail && HasColumn(rst, "email") ? rst["email"]?.ToString() ?? "" : "",
-                            birth_of_date = rst["birth_of_date"] == DBNull.Value? null : Convert.ToDateTime(rst["birth_of_date"]),
+                            birth_of_date = rst["birth_of_date"] == DBNull.Value ? null : Convert.ToDateTime(rst["birth_of_date"]),
                             phone_no = hasPhone && HasColumn(rst, "phone_no") ? rst["phone_no"]?.ToString() ?? "" : "",
                             address = hasAddress && HasColumn(rst, "address") ? rst["address"]?.ToString() ?? "" : "",
                             role_id = rst["role_id"] == DBNull.Value ? 0 : Convert.ToInt32(rst["role_id"]),
@@ -171,7 +171,7 @@ namespace FoodOutlet.AppCode
             using (MySqlConnection conn = _connectionFactory.CreateConnection())
             {
                 conn.Open();
-                using (MySqlCommand cmd = new MySqlCommand("SELECT id,name,email,password_hash,birth_of_date,phone_no,address,role_id FROM registrations WHERE id=@id", conn))
+                using (MySqlCommand cmd = new MySqlCommand("SELECT id,registration_name AS name,email,password_hash,birth_of_date,phone_no,address,role_id FROM registrations WHERE id=@id", conn))
                 {
                     cmd.Parameters.AddWithValue("@id", id);
                     using (MySqlDataReader rst = cmd.ExecuteReader())
@@ -205,9 +205,9 @@ namespace FoodOutlet.AppCode
                 using (MySqlConnection conn = _connectionFactory.CreateConnection())
                 {
                     conn.Open();
-                    using (MySqlCommand cmd = new MySqlCommand("UPDATE registrations SET name=@name,birth_of_date=@birth_of_date,role_id=@role_id WHERE id=@id", conn))
+                    using (MySqlCommand cmd = new MySqlCommand("UPDATE registrations SET registration_name=@registration_name,birth_of_date=@birth_of_date,role_id=@role_id WHERE id=@id", conn))
                     {
-                        cmd.Parameters.AddWithValue("@name", staf.name);
+                        cmd.Parameters.AddWithValue("@registration_name", staf.name);
                         cmd.Parameters.AddWithValue("@birth_of_date", staf.birth_of_date);
                         cmd.Parameters.AddWithValue("@role_id", staf.role_id);
                         cmd.Parameters.AddWithValue("@id", staf.id);
@@ -383,10 +383,9 @@ namespace FoodOutlet.AppCode
                 }
             }
             return list;
-        }
+        }                                                   
 
         // return resigned staff details by joining on registration_id
-        // resigns table is expected to have columns: id, registration_id, reason, resigned (or alternative name)
         public List<dynamic> GetResignedStaffs()
         {
             var list = new List<dynamic>();
@@ -569,7 +568,7 @@ namespace FoodOutlet.AppCode
             return msg;
         }
 
-        // recipe methods
+        // recipe methods (simplified - only name and price)
         public List<Models.Recipe> GetAllRecipes()
         {
             var list = new List<Models.Recipe>();
@@ -578,17 +577,27 @@ namespace FoodOutlet.AppCode
                 using (var conn = _connectionFactory.CreateConnection())
                 {
                     conn.Open();
-                    using (var cmd = new MySqlCommand("SELECT id,name,price,qty,qty_status FROM recipes ORDER BY id", conn))
+                    string table = GetRecipeTableName();
+
+                    string sql = $@"
+                        SELECT r.id,
+                               r.recipe_name AS name,
+                               r.price
+                        FROM {table} r
+                        ORDER BY r.id";
+
+                    using (var cmd = new MySqlCommand(sql, conn))
                     using (var rdr = cmd.ExecuteReader())
                     {
                         while (rdr.Read())
                         {
-                            list.Add(new Models.Recipe {
+                            list.Add(new Models.Recipe
+                            {
                                 id = rdr["id"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["id"]),
                                 name = rdr["name"]?.ToString() ?? "",
                                 price = rdr["price"] == DBNull.Value ? 0 : Convert.ToDecimal(rdr["price"]),
-                                qty = rdr["qty"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["qty"]),
-                                qty_status = rdr["qty_status"]?.ToString() ?? ""
+                                qty = 0,
+                                qty_status = ""
                             });
                         }
                     }
@@ -609,27 +618,25 @@ namespace FoodOutlet.AppCode
                 using (var conn = _connectionFactory.CreateConnection())
                 {
                     conn.Open();
+                    string table = GetRecipeTableName();
+
                     if (r.id > 0)
                     {
-                        using (var cmd = new MySqlCommand("UPDATE recipes SET name=@name,price=@price,qty=@qty,qty_status=@status WHERE id=@id", conn))
+                        using (var cmd = new MySqlCommand($"UPDATE {table} SET recipe_name=@name, price=@price WHERE id=@id", conn))
                         {
                             cmd.Parameters.AddWithValue("@id", r.id);
-                            cmd.Parameters.AddWithValue("@name", r.name);
+                            cmd.Parameters.AddWithValue("@name", r.name ?? "");
                             cmd.Parameters.AddWithValue("@price", r.price);
-                            cmd.Parameters.AddWithValue("@qty", r.qty);
-                            cmd.Parameters.AddWithValue("@status", r.qty_status);
                             cmd.ExecuteNonQuery();
                             msg.message = "Success";
                         }
                     }
                     else
                     {
-                        using (var cmd = new MySqlCommand("INSERT INTO recipes (name,price,qty,qty_status) VALUES (@name,@price,@qty,@status)", conn))
+                        using (var cmd = new MySqlCommand($"INSERT INTO {table} (recipe_name, price, created_at) VALUES (@name, @price, NOW())", conn))
                         {
-                            cmd.Parameters.AddWithValue("@name", r.name);
+                            cmd.Parameters.AddWithValue("@name", r.name ?? "");
                             cmd.Parameters.AddWithValue("@price", r.price);
-                            cmd.Parameters.AddWithValue("@qty", r.qty);
-                            cmd.Parameters.AddWithValue("@status", r.qty_status);
                             cmd.ExecuteNonQuery();
                             msg.message = "Success";
                         }
@@ -651,12 +658,26 @@ namespace FoodOutlet.AppCode
                 using (var conn = _connectionFactory.CreateConnection())
                 {
                     conn.Open();
-                    using (var cmd = new MySqlCommand("DELETE FROM recipes WHERE id=@id", conn))
+                    string table = GetRecipeTableName();
+
+                    using (var tx = conn.BeginTransaction())
                     {
-                        cmd.Parameters.AddWithValue("@id", id);
-                        cmd.ExecuteNonQuery();
-                        msg.message = "Success";
+                        using (var cmdInv = new MySqlCommand("DELETE FROM inventories WHERE recipe_id = @rid", conn, tx))
+                        {
+                            cmdInv.Parameters.AddWithValue("@rid", id);
+                            cmdInv.ExecuteNonQuery();
+                        }
+
+                        using (var cmd = new MySqlCommand($"DELETE FROM {table} WHERE id=@id", conn, tx))
+                        {
+                            cmd.Parameters.AddWithValue("@id", id);
+                            cmd.ExecuteNonQuery();
+                        }
+
+                        tx.Commit();
                     }
+
+                    msg.message = "Success";
                 }
             }
             catch (Exception e)
@@ -664,6 +685,53 @@ namespace FoodOutlet.AppCode
                 msg.message = "Error: " + e.Message;
             }
             return msg;
+        }
+
+        // helpers for recipe diagnostics
+        public string GetRecipeTableName()
+        {
+            using (var conn = _connectionFactory.CreateConnection())
+            {
+                conn.Open();
+                using (var cmd = new MySqlCommand(
+                    "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('recipes','recipe') LIMIT 1", conn))
+                {
+                    var t = cmd.ExecuteScalar();
+                    if (t != null)
+                        return t.ToString();
+                }
+            }
+            return "recipes";
+        }
+
+        public List<string> GetRecipeColumns()
+        {
+            var cols = new List<string>();
+            string table = GetRecipeTableName();
+            using (var conn = _connectionFactory.CreateConnection())
+            {
+                conn.Open();
+                using (var cmd = new MySqlCommand(
+                    $"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='{table}'", conn))
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read()) cols.Add(rdr.GetString(0));
+                }
+            }
+            return cols;
+        }
+
+        public int GetRecipeCount()
+        {
+            using (var conn = _connectionFactory.CreateConnection())
+            {
+                conn.Open();
+                string table = GetRecipeTableName();
+                using (var cmd = new MySqlCommand($"SELECT COUNT(*) FROM {table}", conn))
+                {
+                    return Convert.ToInt32(cmd.ExecuteScalar());
+                }
+            }
         }
 
     }

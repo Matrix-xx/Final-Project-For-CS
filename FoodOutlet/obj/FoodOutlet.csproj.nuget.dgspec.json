@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "D:\\MLM\\Final-Project-For-CS\\FoodOutlet\\FoodOutlet.csproj": {}
+    "D:\\MLM\\Final\\FoodOutlet\\FoodOutlet.csproj": {}
   },
   "projects": {
-    "D:\\MLM\\Final-Project-For-CS\\FoodOutlet\\FoodOutlet.csproj": {
+    "D:\\MLM\\Final\\FoodOutlet\\FoodOutlet.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "D:\\MLM\\Final-Project-For-CS\\FoodOutlet\\FoodOutlet.csproj",
+        "projectUniqueName": "D:\\MLM\\Final\\FoodOutlet\\FoodOutlet.csproj",
         "projectName": "FoodOutlet",
-        "projectPath": "D:\\MLM\\Final-Project-For-CS\\FoodOutlet\\FoodOutlet.csproj",
+        "projectPath": "D:\\MLM\\Final\\FoodOutlet\\FoodOutlet.csproj",
         "packagesPath": "C:\\Users\\scriptorium-18\\.nuget\\packages\\",
-        "outputPath": "D:\\MLM\\Final-Project-For-CS\\FoodOutlet\\obj\\",
+        "outputPath": "D:\\MLM\\Final\\FoodOutlet\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"

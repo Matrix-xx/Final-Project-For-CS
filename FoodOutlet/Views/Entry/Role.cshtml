@@ -66,12 +66,12 @@
         }).done(function(data){
             $.each(data.roles, function(i,v){
                 var num = i + 1;
-                $("#myTable tbody").append(
+                $("#myTable tbody").append( 
         "<tr>" +
             "<td>" + num + "</td>" +
             "<td>" + v.role_name + "</td>" +
             "<td class='text-center'>" +
-                "<button class='btn btn-danger btn-sm' onclick='deleteRole(" + v.id + ")'>Delete</button>" +
+                "<button class='btn btn-danger btn-sm' onclick='deleteRole(" + v.id + ")'><i class='fas fa-trash'></i></button>" +
             "</td>" +
         "</tr>"
     );
