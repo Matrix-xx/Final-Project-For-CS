@@ -1,0 +1,7 @@
+# Ignore frontend files in language stats
+*.js linguist-vendored
+*.css linguist-vendored
+*.html linguist-vendored
+
+# Force detection of C# if it's hiding
+*.cs linguist-detectable=true

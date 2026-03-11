@@ -105,52 +105,16 @@
                                 Clear
                             </button>
                         </div>
-
-                        @if(isEdit){
-                        <button class="btn btn-primary ml-2" onclick="goToRegistrationStatus()">
-                            <i class="fas fa-arrow-left"></i> Back
-                        </button>
-                        }
-
                     </div>
                 </div>
             </div>
 
             <div class="col-md-5"></div>
         </div>
-
-        <!-- TABLE -->
-        <div class="row mt-4">
-            <div class="col-md-12">
-                <div class="card shadow-sm section-card">
-                    <div class="card-header">
-                        <h4 class="mb-0 font-weight-bold">Recipe List</h4>
-                    </div>
-
-                    <div class="card-body">
-                        <table class="table table-striped" id="catTable" style="width:100%">
-                            <thead>
-                                <tr>
-                                    <th style="width:8%;">No</th>
-                                    <th>Name</th>
-                                    <th>Category</th>
-                                    <th>Price (MMK)</th>
-                                    <th class="text-center" style="width:150px;">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody></tbody>
-                        </table>
-                    </div>
-
-                </div>
-            </div>
-        </div>
-
     </div>
 </section>
 <script>
-
-
+   
     function loadCategories(selectedId) {
         $.get('/api/get_all_categories', function (data) {
             let list = data.categories || [];
@@ -166,10 +130,7 @@
             }
         });
     }
-
-        function goToRegistrationStatus() {
-        window.location.href = "/Entry/Recipe";
-    }
+    
     function saveRecipe() {
     let obj = {
         id: parseInt($('#hdnId').val()),
@@ -203,30 +164,6 @@
                 alert(res.message);
             }
         });
-    }
-
-    function deleteRecipe(id) {
-
-        if (!confirm("Delete this recipe?")) return;
-
-        $.ajax({
-            type: 'POST',
-            url: '/api/delete_recipe',
-            data: JSON.stringify({ id: id }),
-            contentType: 'application/json',
-            dataType: 'json'
-        })
-        .done(function (res) {
-            if (res.message === "Success") {
-                loadRecipes();
-            } else {
-                alert(res.message);
-            }
-        });
-    }
-
-    function editRecipe(id) {
-        window.location = '/Entry/Recipe?id=' + id;
     }
 
     function clearForm() {
