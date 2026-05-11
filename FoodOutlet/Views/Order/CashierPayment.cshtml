@@ -1,0 +1,137 @@
+@model List<dynamic>
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var servedByTable = (ViewData["ServedByTable"] as List<dynamic>) ?? new List<dynamic>();
+}
+<partial name="_CashierWorkflowStyles" />
+
+<div class="content-header">
+    <div class="container-fluid">
+        <h1 class="m-0" style="font-size:1.3rem; font-weight:700;">
+            <i class="fas fa-hand-holding-usd mr-2 text-success"></i>
+            @(ViewData["Title"] ?? "Cashier — Payment")
+            <span class="badge badge-success ml-2" id="totalBadge">@servedByTable.Count</span>
+        </h1>
+    </div>
+</div>
+
+<section class="content">
+    <div class="container-fluid">
+        <p class="text-muted mb-3">Collect payment for served tables, then send to the cleaner when the bill is closed.</p>
+
+        <div class="section-divider">
+            <i class="fas fa-hand-holding-usd mr-1 text-success"></i>
+            Served — awaiting payment &amp; cleanup
+            <span class="badge badge-success ml-1">@servedByTable.Count</span>
+        </div>
+
+        @if (!servedByTable.Any())
+        {
+            <div class="empty-queue">
+                <i class="fas fa-inbox text-muted"></i>
+                <p>No tables awaiting payment.</p>
+            </div>
+        }
+        else
+        {
+            <div class="row">
+                @foreach (var t in servedByTable)
+                {
+                    var safeId = ((string)t.table_label).Replace(" ", "-");
+                    var rawItems = ((string)t.items_raw).Split('|');
+                    var total = (decimal)t.total_cost;
+                    <div class="col-md-6 col-lg-4 mb-3" id="table-card-@safeId">
+                        <div class="card order-card h-100 border-success" style="border-width:2px;">
+                            <div class="card-header d-flex justify-content-between align-items-center py-2"
+                                 style="background:#f8fff8; border-bottom:1px solid #c3e6cb;">
+                                <span class="order-table-badge text-dark">
+                                    <i class="fas fa-chair mr-1 text-success"></i>Table @t.table_label
+                                </span>
+                                <span class="badge badge-success">Served</span>
+                            </div>
+                            <div class="card-body pb-2">
+                                <div class="order-time mb-2">
+                                    <i class="fas fa-clock mr-1"></i>
+                                    First order: @(((DateTime)t.first_ordered_at).ToString("dd MMM HH:mm"))
+                                </div>
+                                <ul class="list-unstyled order-items-text mb-2" style="padding-left:4px;">
+                                    @foreach (var item in rawItems)
+                                    {
+                                        if (!string.IsNullOrWhiteSpace(item))
+                                        {
+                                            <li><i class="fas fa-utensils mr-1 text-muted" style="font-size:0.7rem;"></i>@item.Trim()</li>
+                                        }
+                                    }
+                                </ul>
+                                <div class="d-flex justify-content-between align-items-center mt-2 pt-2"
+                                     style="border-top:1px dashed #ddd;">
+                                    <span style="font-weight:700; font-size:0.9rem; color:#555;">Total</span>
+                                    <span style="font-weight:800; font-size:1.05rem; color:#27ae60;">
+                                        @total.ToString("N0") MMK
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="card-footer py-2" style="background:#f8fff8;">
+                                <button class="btn btn-secondary btn-sm btn-action w-100"
+                                        onclick="doTableAction('@t.order_ids', 'Cleaning', 'table-card-@safeId', this)">
+                                    <i class="fas fa-broom mr-1"></i>Payment done — send to clean
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@section Scripts {
+<script>
+    function doTableAction(orderIds, newStatus, cardId, btn) {
+        var label = btn.textContent.trim();
+        var msg = 'Mark all orders for this table as "' + newStatus + '"?';
+        if (newStatus === 'Cleaning') {
+            msg = 'Payment collected and bill closed? Send this table to the cleaner queue?';
+        } else if (newStatus === 'Done') {
+            msg = 'Mark this table as cleaned and finished?';
+        }
+        if (!confirm(msg)) return;
+
+        var card = document.getElementById(cardId);
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Wait...';
+
+        $.ajax({
+            type: 'POST',
+            url: '/api/order/update_table_status',
+            contentType: 'application/json',
+            data: JSON.stringify({ order_ids: orderIds, new_status: newStatus }),
+            success: function () {
+                fadeRemove(card);
+            },
+            error: function (xhr) {
+                var em = (xhr.responseJSON && xhr.responseJSON.message)
+                    ? xhr.responseJSON.message
+                    : 'Failed to update. Please try again.';
+                alert(em);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fas fa-redo mr-1"></i>' + label;
+            }
+        });
+    }
+
+    function fadeRemove(card) {
+        if (!card) return;
+        card.style.transition = 'opacity 0.3s';
+        card.style.opacity = '0';
+        setTimeout(function () {
+            card.remove();
+            var remaining = document.querySelectorAll('[id^="table-card-"]').length;
+            var badge = document.getElementById('totalBadge');
+            if (badge) badge.textContent = remaining;
+        }, 300);
+    }
+
+    setTimeout(function () { location.reload(); }, 30000);
+</script>
+}

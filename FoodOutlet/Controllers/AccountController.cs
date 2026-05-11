@@ -31,7 +31,7 @@ namespace FoodOutlet.Controllers
         {
             if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(password))
             {
-                ViewData["Error"] = "Email and password are required.";
+                ViewData["Error"] = "Username / email and password are required.";
                 ViewData["ReturnUrl"] = returnUrl;
                 return View();
             }
@@ -42,21 +42,23 @@ namespace FoodOutlet.Controllers
             {
                 var blocked = _staff.IsLoginBlockedByResignation(email.Trim(), password);
                 ViewData["Error"] = blocked
-                    ? "Your resignation is pending or approved — you cannot log in. If your resignation was rejected, try again or contact an administrator."
-                    : "Invalid email or password.";
+                    ? "You have resigned — you cannot log in. Contact an administrator if this is wrong."
+                    : "Username / email or password is incorrect.";
                 ViewData["ReturnUrl"] = returnUrl;
                 return View();
             }
 
+            var roleNorm = (staff.role_name ?? "").Trim();
+
             var claims = new List<Claim>
             {
                 new Claim("StaffId",   staff.id.ToString()),
-                new Claim("Name",      staff.name),
-                new Claim("Email",     staff.email),
-                new Claim("RoleName",  staff.role_name),
+                new Claim("Name",      staff.name ?? ""),
+                new Claim("Email",     staff.email ?? ""),
+                new Claim("RoleName",  roleNorm),
                 new Claim("Photo",     staff.photo ?? ""),
-                new Claim(ClaimTypes.Name, staff.email),
-                new Claim(ClaimTypes.Role, staff.role_name),
+                new Claim(ClaimTypes.Name, staff.email ?? ""),
+                new Claim(ClaimTypes.Role, roleNorm),
             };
 
             var identity  = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);

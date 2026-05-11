@@ -819,6 +819,113 @@ ORDER BY r.recipe_name, r.id";
             return list;
         }
 
+        /// <summary>
+        /// Income (MMK) per menu category from completed (<c>Done</c>) orders in the last <paramref name="days"/> days — dashboard pie chart.
+        /// </summary>
+        public List<dynamic> GetCategoryIncomeForDashboard(int days)
+        {
+            var list = new List<dynamic>();
+            try
+            {
+                using (var conn = _connectionFactory.CreateConnection())
+                {
+                    conn.Open();
+                    EnsureOrderDetailOrderId(conn);
+
+                    const string sql = @"
+                        SELECT COALESCE(MAX(c.category_name), 'Uncategorized') AS category_name,
+                               SUM(r.price * od.qty) AS total_income
+                        FROM `Order` o
+                        INNER JOIN order_detail od ON od.order_id = o.id
+                        INNER JOIN recipes r ON r.id = od.recipe_id
+                        LEFT JOIN categories c ON c.id = r.category_id
+                        WHERE o.status = 'Done'
+                          AND o.created_at >= DATE_SUB(CURDATE(), INTERVAL @days DAY)
+                        GROUP BY COALESCE(r.category_id, 0), COALESCE(c.category_name, 'Uncategorized')
+                        HAVING SUM(r.price * od.qty) > 0
+                        ORDER BY total_income DESC";
+
+                    using (var cmd = new MySqlCommand(sql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@days", days);
+                        using (var rdr = cmd.ExecuteReader())
+                        {
+                            while (rdr.Read())
+                            {
+                                list.Add(new
+                                {
+                                    category_name = rdr["category_name"]?.ToString() ?? "Uncategorized",
+                                    total_income = rdr["total_income"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["total_income"])
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("GetCategoryIncomeForDashboard error: " + ex.Message);
+            }
+
+            return list;
+        }
+
+        /// <summary>
+        /// Best-selling recipes by units sold among completed (<c>Done</c>) orders in the last <paramref name="days"/> days.
+        /// </summary>
+        public List<dynamic> GetTopSellingItems(int days, int limit = 5)
+        {
+            var list = new List<dynamic>();
+            if (limit < 1) limit = 1;
+            if (limit > 50) limit = 50;
+
+            try
+            {
+                using (var conn = _connectionFactory.CreateConnection())
+                {
+                    conn.Open();
+                    EnsureOrderDetailOrderId(conn);
+
+                    string sql = @"
+                        SELECT r.recipe_name AS item_name,
+                               SUM(od.qty) AS qty_sold,
+                               SUM(r.price * od.qty) AS total_income
+                        FROM `Order` o
+                        INNER JOIN order_detail od ON od.order_id = o.id
+                        INNER JOIN recipes r ON r.id = od.recipe_id
+                        WHERE o.status = 'Done'
+                          AND o.created_at >= DATE_SUB(CURDATE(), INTERVAL @days DAY)
+                        GROUP BY r.id, r.recipe_name
+                        HAVING SUM(od.qty) > 0
+                        ORDER BY qty_sold DESC
+                        LIMIT " + limit.ToString();
+
+                    using (var cmd = new MySqlCommand(sql, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@days", days);
+                        using (var rdr = cmd.ExecuteReader())
+                        {
+                            while (rdr.Read())
+                            {
+                                list.Add(new
+                                {
+                                    item_name = rdr["item_name"]?.ToString() ?? "",
+                                    qty_sold = rdr["qty_sold"] == DBNull.Value ? 0 : Convert.ToInt32(rdr["qty_sold"]),
+                                    total_income = rdr["total_income"] == DBNull.Value ? 0m : Convert.ToDecimal(rdr["total_income"])
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("GetTopSellingItems error: " + ex.Message);
+            }
+
+            return list;
+        }
+
         #endregion
 
         #region Update and Delete
@@ -851,24 +958,59 @@ ORDER BY r.recipe_name, r.id";
 
         public Message DeleteStaff(int id)
         {
-            Message msg = new Message();
+            var msg = new Message();
+            if (id <= 0)
+            {
+                msg.message = "Error: Invalid staff id.";
+                return msg;
+            }
+
             try
             {
-                using (MySqlConnection conn = _connectionFactory.CreateConnection())
+                using (var conn = _connectionFactory.CreateConnection())
                 {
                     conn.Open();
-                    using (MySqlCommand cmd = new MySqlCommand("DELETE FROM registrations WHERE id=@id", conn))
+                    EnsureResignApprovalColumn(conn);
+
+                    using (var tx = conn.BeginTransaction())
                     {
-                        cmd.Parameters.AddWithValue("@id", id);
-                        cmd.ExecuteNonQuery();
-                        msg.message = "Success";
+                        try
+                        {
+                            using (var delResign = new MySqlCommand("DELETE FROM resigns WHERE registration_id = @id", conn, tx))
+                            {
+                                delResign.Parameters.AddWithValue("@id", id);
+                                delResign.ExecuteNonQuery();
+                            }
+
+                            using (var delReg = new MySqlCommand("DELETE FROM registrations WHERE id = @id", conn, tx))
+                            {
+                                delReg.Parameters.AddWithValue("@id", id);
+                                int n = delReg.ExecuteNonQuery();
+                                if (n == 0)
+                                {
+                                    tx.Rollback();
+                                    msg.message = "Error: Staff member not found.";
+                                    return msg;
+                                }
+                            }
+
+                            tx.Commit();
+                            msg.message = "Success";
+                        }
+                        catch
+                        {
+                            try { tx.Rollback(); } catch { /* ignore */ }
+                            throw;
+                        }
                     }
                 }
             }
             catch (Exception e)
             {
                 msg.message = "Error: " + e.Message;
+                Console.WriteLine("DeleteStaff error: " + e.Message);
             }
+
             return msg;
         }
 
@@ -956,6 +1098,7 @@ ORDER BY r.recipe_name, r.id";
             return msg;
         }
 
+        /// <summary>Set inventory quantity to zero (stock cleared). Does not remove the inventory row.</summary>
         public Message DeleteInventory(int id)
         {
             var msg = new Message();
@@ -964,13 +1107,14 @@ ORDER BY r.recipe_name, r.id";
                 using (var conn = _connectionFactory.CreateConnection())
                 {
                     conn.Open();
-                    using (var cmd = new MySqlCommand("DELETE FROM inventories WHERE id = @id", conn))
+                    using (var cmd = new MySqlCommand(
+                               "UPDATE inventories SET stock_qty = 0, updated_at = NOW() WHERE id = @id", conn))
                     {
                         cmd.Parameters.AddWithValue("@id", id);
-                        cmd.ExecuteNonQuery();
+                        int n = cmd.ExecuteNonQuery();
+                        msg.message = n > 0 ? "Success" : "Error: Inventory row not found.";
                     }
                 }
-                msg.message = "Success";
             }
             catch (Exception ex)
             {
@@ -1120,6 +1264,84 @@ ORDER BY r.recipe_name, r.id";
         private static bool _orderDetailMigrated = false;
         private static readonly object _migrateLock = new();
 
+        private static bool _tableListsAvailMigrated = false;
+        private static readonly object _tableListsAvailLock = new();
+
+        /// <summary>
+        /// Adds <c>is_available</c> to <c>table_lists</c> for QR open/closed and cashier override.
+        /// </summary>
+        private void EnsureTableListsHasAvailability(MySqlConnection conn)
+        {
+            if (_tableListsAvailMigrated) return;
+            lock (_tableListsAvailLock)
+            {
+                if (_tableListsAvailMigrated) return;
+                try
+                {
+                    using var check = new MySqlCommand(
+                        "SELECT COUNT(*) FROM information_schema.columns " +
+                        "WHERE table_schema = DATABASE() AND table_name = 'table_lists' AND column_name = 'is_available'", conn);
+                    if (Convert.ToInt32(check.ExecuteScalar()) == 0)
+                    {
+                        using var alter = new MySqlCommand(
+                            "ALTER TABLE table_lists ADD COLUMN is_available TINYINT(1) NOT NULL DEFAULT 1", conn);
+                        alter.ExecuteNonQuery();
+                        Console.WriteLine("table_lists.is_available column added.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("EnsureTableListsHasAvailability error: " + ex.Message);
+                }
+
+                _tableListsAvailMigrated = true;
+            }
+        }
+
+        /// <summary>
+        /// After cleaner marks orders <c>Done</c>, table becomes available for new QR guests;
+        /// after cashier sends to <c>Cleaning</c>, table is marked unavailable until cleaned.
+        /// </summary>
+        private void SyncTableAvailabilityForOrders(MySqlConnection conn, List<int> orderIds, string newStatus)
+        {
+            if (newStatus != "Cleaning" && newStatus != "Done") return;
+            EnsureTableListsHasAvailability(conn);
+            if (orderIds == null || orderIds.Count == 0) return;
+
+            var distinctOrderIds = orderIds.Where(id => id > 0).Distinct().ToList();
+            if (distinctOrderIds.Count == 0) return;
+
+            var ph = string.Join(",", distinctOrderIds.Select((_, i) => $"@oid{i}"));
+            var sql = $"SELECT DISTINCT table_id FROM `Order` WHERE id IN ({ph})";
+            var tableIds = new List<int>();
+            using (var cmd = new MySqlCommand(sql, conn))
+            {
+                for (int i = 0; i < distinctOrderIds.Count; i++)
+                    cmd.Parameters.AddWithValue($"@oid{i}", distinctOrderIds[i]);
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                    {
+                        if (rdr["table_id"] != DBNull.Value)
+                            tableIds.Add(Convert.ToInt32(rdr["table_id"]));
+                    }
+                }
+            }
+
+            tableIds = tableIds.Distinct().ToList();
+            if (tableIds.Count == 0) return;
+
+            int available = newStatus == "Done" ? 1 : 0;
+            var tp = string.Join(",", tableIds.Select((_, i) => $"@tid{i}"));
+            using (var up = new MySqlCommand($"UPDATE table_lists SET is_available = @av WHERE id IN ({tp})", conn))
+            {
+                up.Parameters.AddWithValue("@av", available);
+                for (int i = 0; i < tableIds.Count; i++)
+                    up.Parameters.AddWithValue($"@tid{i}", tableIds[i]);
+                up.ExecuteNonQuery();
+            }
+        }
+
         /// <summary>
         /// Adds order_id column to order_detail if it doesn't exist yet.
         /// Must be called OUTSIDE any active transaction (ALTER TABLE causes implicit commit).
@@ -1166,6 +1388,7 @@ ORDER BY r.recipe_name, r.id";
                 {
                     conn.Open();
                     EnsureOrderDetailOrderId(conn); // must run before transaction
+                    EnsureTableListsHasAvailability(conn);
                     using (var tx = conn.BeginTransaction())
                     {
                         int tableId = ResolveTableListIdForOrder(tableNumber, conn);
@@ -1175,6 +1398,20 @@ ORDER BY r.recipe_name, r.id";
                             tx.Rollback();
                             return msg;
                         }
+
+                        using (var availChk = new MySqlCommand(
+                                   "SELECT COALESCE(is_available, 1) FROM table_lists WHERE id = @tid FOR UPDATE", conn, tx))
+                        {
+                            availChk.Parameters.AddWithValue("@tid", tableId);
+                            var av = availChk.ExecuteScalar();
+                            if (av == null || Convert.ToInt32(av) == 0)
+                            {
+                                msg.message = "This table is not available for ordering right now. Please ask staff.";
+                                tx.Rollback();
+                                return msg;
+                            }
+                        }
+
                         var statusId = ResolveInitialStatusId(conn);
 
                         // Merge duplicated recipe lines in one order request to validate/deduct correctly.
@@ -1794,6 +2031,8 @@ ORDER BY r.recipe_name, r.id";
                         for (int i = 0; i < orderIds.Count; i++)
                             cmd.Parameters.AddWithValue(paramNames[i], orderIds[i]);
                         int rows = cmd.ExecuteNonQuery();
+                        if (rows > 0)
+                            SyncTableAvailabilityForOrders(conn, orderIds, newStatus);
                         msg.message = rows > 0 ? "Success" : "Error: No orders were updated.";
                     }
                 }
@@ -1823,6 +2062,8 @@ ORDER BY r.recipe_name, r.id";
                         cmd.Parameters.AddWithValue("@s",   newStatus);
                         cmd.Parameters.AddWithValue("@id",  orderId);
                         int rows = cmd.ExecuteNonQuery();
+                        if (rows > 0)
+                            SyncTableAvailabilityForOrders(conn, new List<int> { orderId }, newStatus);
                         msg.message = rows > 0 ? "Success" : "Error: Order not found";
                     }
                 }
@@ -1833,6 +2074,110 @@ ORDER BY r.recipe_name, r.id";
                 Console.WriteLine("UpdateOrderStatus error: " + ex.Message);
             }
             return msg;
+        }
+
+        /// <summary>
+        /// All dining tables (<c>table_lists</c>) with QR availability flags — cashier dashboard.
+        /// </summary>
+        public List<dynamic> GetTableAvailabilityListForCashier()
+        {
+            var list = new List<dynamic>();
+            try
+            {
+                using (var conn = _connectionFactory.CreateConnection())
+                {
+                    conn.Open();
+                    EnsureTableListsHasAvailability(conn);
+                    // Numeric table names ("1","2","12") → numeric order; others → alphabetical after numerics
+                    const string tblSql =
+                        @"SELECT id AS table_list_id, table_name, COALESCE(is_available, 1) AS is_available
+                          FROM table_lists
+                          ORDER BY
+                            CASE WHEN TRIM(IFNULL(table_name,'')) REGEXP '^[0-9]+$' THEN 0 ELSE 1 END ASC,
+                            CASE WHEN TRIM(IFNULL(table_name,'')) REGEXP '^[0-9]+$' THEN CAST(TRIM(table_name) AS UNSIGNED) ELSE 0 END ASC,
+                            TRIM(IFNULL(table_name,'')) ASC";
+                    using (var cmd = new MySqlCommand(tblSql, conn))
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        while (rdr.Read())
+                        {
+                            list.Add(new
+                            {
+                                table_list_id = Convert.ToInt32(rdr["table_list_id"]),
+                                table_name = rdr["table_name"]?.ToString() ?? "?",
+                                is_available = rdr["is_available"] == DBNull.Value ? 1 : Convert.ToInt32(rdr["is_available"])
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("GetTableAvailabilityListForCashier error: " + ex.Message);
+            }
+
+            return list;
+        }
+
+        public Message SetTableAvailabilityForCashier(int tableListId, bool available)
+        {
+            var msg = new Message();
+            if (tableListId <= 0)
+            {
+                msg.message = "Error: Invalid table.";
+                return msg;
+            }
+
+            try
+            {
+                using (var conn = _connectionFactory.CreateConnection())
+                {
+                    conn.Open();
+                    EnsureTableListsHasAvailability(conn);
+                    using (var cmd = new MySqlCommand(
+                               "UPDATE table_lists SET is_available = @av WHERE id = @id", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@av", available ? 1 : 0);
+                        cmd.Parameters.AddWithValue("@id", tableListId);
+                        int n = cmd.ExecuteNonQuery();
+                        msg.message = n > 0 ? "Success" : "Error: Table not found.";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                msg.message = "Error: " + ex.Message;
+                Console.WriteLine("SetTableAvailabilityForCashier error: " + ex.Message);
+            }
+
+            return msg;
+        }
+
+        /// <summary>Whether QR menu ordering is allowed for this registered table number.</summary>
+        public bool IsTableQrAvailable(int tableNumber)
+        {
+            try
+            {
+                using (var conn = _connectionFactory.CreateConnection())
+                {
+                    conn.Open();
+                    EnsureTableListsHasAvailability(conn);
+                    int tid = ResolveTableListIdForOrder(tableNumber, conn);
+                    if (tid <= 0) return false;
+                    using (var cmd = new MySqlCommand(
+                               "SELECT COALESCE(is_available, 1) FROM table_lists WHERE id = @id LIMIT 1", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", tid);
+                        var o = cmd.ExecuteScalar();
+                        return o != null && Convert.ToInt32(o) != 0;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("IsTableQrAvailable error: " + ex.Message);
+                return false;
+            }
         }
 
         #endregion

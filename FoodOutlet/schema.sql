@@ -78,6 +78,7 @@ CREATE TABLE Inventories (
 CREATE TABLE Table_Lists (
     id INT AUTO_INCREMENT PRIMARY KEY,
     table_name VARCHAR(50),
+    is_available TINYINT(1) NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

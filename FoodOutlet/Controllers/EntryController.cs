@@ -46,6 +46,7 @@ namespace FoodOutlet.Controllers
         }
 
         #region Existing Views
+        [Authorize(Policy = "AdminOrChef")]
         public IActionResult Inventory()
         {
             // #region agent log
@@ -363,6 +364,7 @@ namespace FoodOutlet.Controllers
             ViewData["LatestItemImage"] = latestItem == null ? "/img/sticky-rice.jpg" : (string)latestItem.recipe_img;
             ViewData["LatestItemDesc"] = latestItem == null ? "No item available" : (string)latestItem.description;
             ViewData["TableNumber"] = tableNumber;
+            ViewData["TableQrAvailable"] = _staff.IsTableQrAvailable(tableNumber);
             return View("~/Views/Entry/Table.cshtml", converted);
         }
 
@@ -383,6 +385,7 @@ namespace FoodOutlet.Controllers
                 return NotFound();
 
             ViewData["TableNumber"] = tableNumber;
+            ViewData["TableQrAvailable"] = _staff.IsTableQrAvailable(tableNumber);
             return View("~/Views/Entry/Cart.cshtml");
         }
 
@@ -532,6 +535,7 @@ namespace FoodOutlet.Controllers
             return _staff.DeleteRole(id);
         }
 
+        [Authorize(Policy = "AdminOrChef")]
         [HttpPost("api/delete_inventory")]
         public Models.Message DeleteInventory([FromBody] DeleteRequest payload)
         {
@@ -565,6 +569,26 @@ namespace FoodOutlet.Controllers
         public Dictionary<string, dynamic> GetSalesChart(int days = 7)
         {
             return new Dictionary<string, dynamic> { { "series", _staff.GetSalesChartData(days) } };
+        }
+
+        /// <summary>MMK totals per category for completed orders in the sliding window.</summary>
+        [HttpGet("api/admin/sales_by_category")]
+        public Dictionary<string, dynamic> GetSalesByCategory(int days = 7)
+        {
+            if (days < 1) days = 7;
+            if (days > 366 * 5) days = 366 * 5;
+            return new Dictionary<string, dynamic> { { "categories", _staff.GetCategoryIncomeForDashboard(days) } };
+        }
+
+        /// <summary>Top-selling items by quantity in the sliding window.</summary>
+        [HttpGet("api/admin/top_selling_items")]
+        public Dictionary<string, dynamic> GetTopSellingItemsEndpoint(int days = 7, int take = 5)
+        {
+            if (days < 1) days = 7;
+            if (days > 366 * 5) days = 366 * 5;
+            if (take < 1) take = 5;
+            if (take > 20) take = 20;
+            return new Dictionary<string, dynamic> { { "items", _staff.GetTopSellingItems(days, take) } };
         }
 
         [HttpGet("api/admin/order_history")]

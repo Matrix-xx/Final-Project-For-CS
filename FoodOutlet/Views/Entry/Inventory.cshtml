@@ -1,5 +1,9 @@
-﻿@{
+﻿@using System
+@{
     ViewData["Title"] = "Inventory";
+    var roleName = (User.FindFirst("RoleName")?.Value ?? "").Trim();
+    var canClearInventoryQty = roleName.Equals("Admin", StringComparison.OrdinalIgnoreCase)
+        || roleName.Equals("Chef", StringComparison.OrdinalIgnoreCase);
 }
 
 <div class="content-header">
@@ -111,6 +115,8 @@
 
 @section Scripts {
 <script>
+    var canClearInventoryQty = @(canClearInventoryQty ? "true" : "false");
+
     $(function(){
         loadRecipesForDropdown();
         loadInventories();
@@ -156,25 +162,33 @@
     }
 
     function loadInventories(){
-        $.get('/api/get_all_inventories', function(res){
-            var rows = '';
-            var list = res.inventories || [];
-            list.forEach(function(item, idx){
-                var invId = item.inventory_id || 0;
-                var imgHtml = getImageUrl(item.recipe_img || '');
-                rows += '<tr>' +
-                    '<td>' + (idx+1) + '</td>' +
-                    '<td>' + imgHtml + '</td>' +
-                    '<td>' + (item.recipe_name || '') + '</td>' +
-                    '<td>' + (item.stock_qty || 0) + '</td>' +
-                    '<td class="text-center">' +
-                        '<button class="btn btn-warning btn-sm" onclick="editInventory(' + invId + ',' + item.recipe_id + ',' + (item.stock_qty||0) + ')"><i class="fas fa-edit"></i></button> ' +
-                        (invId ? ('<button class="btn btn-danger btn-sm" onclick="deleteInventory(' + invId + ')"><i class="fas fa-trash"></i></button>') : '') +
-                    '</td>' +
-                '</tr>';
+        $.get('/api/get_all_inventories')
+            .done(function(res){
+                var rows = '';
+                var list = (res && res.inventories) ? res.inventories : [];
+                list.forEach(function(item, idx){
+                    var invId = item.inventory_id || 0;
+                    var qty = item.stock_qty || 0;
+                    var imgHtml = getImageUrl(item.recipe_img || '');
+                    var clearBtn = (canClearInventoryQty && invId && qty > 0)
+                        ? ('<button type="button" class="btn btn-danger btn-sm" title="Set quantity to 0 (clear stock)" onclick="clearInventoryQty(' + invId + ')"><i class="fas fa-trash"></i></button>')
+                        : '';
+                    rows += '<tr>' +
+                        '<td>' + (idx+1) + '</td>' +
+                        '<td>' + imgHtml + '</td>' +
+                        '<td>' + (item.recipe_name || '') + '</td>' +
+                        '<td>' + qty + '</td>' +
+                        '<td class="text-center">' +
+                            '<button type="button" class="btn btn-warning btn-sm" onclick="editInventory(' + invId + ',' + item.recipe_id + ',' + qty + ')"><i class="fas fa-edit"></i></button> ' +
+                            clearBtn +
+                        '</td>' +
+                    '</tr>';
+                });
+                $('#inventoryTable tbody').html(rows || '<tr><td colspan="5" class="text-center text-muted">No inventory items</td></tr>');
+            })
+            .fail(function(){
+                $('#inventoryTable tbody').html('<tr><td colspan="5" class="text-center text-danger">Could not load inventory. Sign in again or refresh the page.</td></tr>');
             });
-            $('#inventoryTable tbody').html(rows || '<tr><td colspan="5" class="text-center text-muted">No inventory items</td></tr>');
-        });
     }
 
     function openForm(){
@@ -253,8 +267,9 @@
         });
     }
 
-    function deleteInventory(id){
-        if(!confirm('Delete this inventory row?')) return;
+    function clearInventoryQty(id){
+        if(!canClearInventoryQty){ alert('Only Admin or Chef can clear stock.'); return; }
+        if(!confirm('Set quantity to 0 for this item? (Stock cleared; row is kept.)')) return;
         $.ajax({
             type:'POST',
             url:'/api/delete_inventory',
@@ -262,46 +277,9 @@
             contentType:'application/json; charset=utf-8'
         }).done(function(res){
             if(res.message == 'Success') loadInventories(); else alert(res.message);
-        }).fail(function(){ alert('Delete failed'); });
-    }
-
-    function getRecipePhotoFrame(imagePath, recipeName) {
-        return PhotoFrameHelper.PhotoFrameHtml(
-            imagePath || '/img/placeholder.png',
-            "4:3",
-            80,
-            recipeName,
-            "rounded shadow-sm"
-        );
-    }
-
-    $(document).ready(function () {
-        $.ajax({
-            url: '/api/get_all_inventories',
-            type: 'GET',
-            success: function (response) {
-                let rows = "";
-                var list = response.inventories || [];
-                list.forEach(function (item, idx) {
-                    let photoFrame = getRecipePhotoFrame(item.recipe_img, item.recipe_name);
-
-                    rows += `
-                        <tr>
-                            <td>${idx + 1}</td>
-                            <td>${photoFrame}</td>
-                            <td>${item.recipe_name}</td>
-                            <td><input type="number" value="${item.stock_qty}" min="0" /></td>
-                            <td>
-                                <button class="btn btn-primary btn-sm" onclick="updateInventory(${item.recipe_id})">
-                                    <i class="fas fa-save"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                });
-                $("#inventoryTable tbody").html(rows);
-            }
+        }).fail(function(xhr){
+            if(xhr.status === 403) alert('Access denied.'); else alert('Request failed');
         });
-    });
+    }
 </script>
 }

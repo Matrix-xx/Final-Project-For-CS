@@ -1,0 +1,129 @@
+@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+    var cashierTableAvail = (ViewData["CashierTableAvailability"] as List<dynamic>) ?? new List<dynamic>();
+}
+<partial name="_CashierWorkflowStyles" />
+
+<div class="content-header">
+    <div class="container-fluid">
+        <h1 class="m-0" style="font-size:1.3rem; font-weight:700;">
+            <i class="fas fa-door-open mr-2 text-info"></i>
+            @(ViewData["Title"] ?? "Cashier — Table availability")
+            <span class="badge badge-info ml-2" id="totalBadge">@cashierTableAvail.Count</span>
+        </h1>
+    </div>
+</div>
+
+<section class="content">
+    <div class="container-fluid">
+        <div class="section-divider">
+            <i class="fas fa-chair mr-1 text-info"></i>
+            Table availability (QR ordering)
+            <span class="badge badge-info ml-1">@cashierTableAvail.Count</span>
+        </div>
+
+        @if (!cashierTableAvail.Any())
+        {
+            <div class="empty-queue mb-4">
+                <i class="fas fa-table text-muted"></i>
+                <p>No tables registered yet. Add tables under Admin → Table Registration.</p>
+            </div>
+        }
+        else
+        {
+            <div class="card card-outline card-secondary mb-4">
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover table-striped mb-0">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th style="width:40%;">Table</th>
+                                    <th>Status</th>
+                                    <th style="width:220px;" class="text-right">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var t in cashierTableAvail)
+                                {
+                                    var tid = (int)t.table_list_id;
+                                    var isOpen = (int)t.is_available != 0;
+                                    <tr id="tbl-avail-row-@tid">
+                                        <td class="align-middle font-weight-bold">@t.table_name</td>
+                                        <td class="align-middle">
+                                            <span class="badge @(isOpen ? "badge-success" : "badge-secondary") tbl-avail-badge" data-tid="@tid">
+                                                @(isOpen ? "Available" : "Unavailable")
+                                            </span>
+                                            <small class="text-muted d-block mt-1">Cleaner finishes → Available. Send to Clean → Unavailable.</small>
+                                        </td>
+                                        <td class="align-middle text-right">
+                                            @if (isOpen)
+                                            {
+                                                <button type="button" class="btn btn-sm btn-outline-secondary tbl-avail-btn"
+                                                        data-tid="@tid" data-next="false">
+                                                    <i class="fas fa-ban mr-1"></i>Mark unavailable
+                                                </button>
+                                            }
+                                            else
+                                            {
+                                                <button type="button" class="btn btn-sm btn-success tbl-avail-btn"
+                                                        data-tid="@tid" data-next="true">
+                                                    <i class="fas fa-check mr-1"></i>Mark available
+                                                </button>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</section>
+
+@section Scripts {
+<script>
+    $(document).on('click', '.tbl-avail-btn', function () {
+        var btn = $(this);
+        var tid = parseInt(btn.data('tid'), 10);
+        var makeAvail = btn.data('next') === true || String(btn.data('next')) === 'true';
+        btn.prop('disabled', true);
+        $.ajax({
+            type: 'POST',
+            url: '/api/order/set_table_availability',
+            contentType: 'application/json',
+            data: JSON.stringify({ table_list_id: tid, is_available: makeAvail })
+        }).done(function () {
+            applyCashierTableAvailRow(tid, makeAvail);
+        }).fail(function (xhr) {
+            var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Failed to update.';
+            alert(msg);
+        }).always(function () {
+            var cell = document.querySelector('#tbl-avail-row-' + tid + ' td:last-child');
+            if (cell) {
+                var b = cell.querySelector('.tbl-avail-btn');
+                if (b) b.disabled = false;
+            }
+        });
+    });
+
+    function applyCashierTableAvailRow(tid, isAvailable) {
+        var row = document.getElementById('tbl-avail-row-' + tid);
+        if (!row) return;
+        var badge = row.querySelector('.tbl-avail-badge');
+        if (badge) {
+            badge.className = 'badge tbl-avail-badge ' + (isAvailable ? 'badge-success' : 'badge-secondary');
+            badge.textContent = isAvailable ? 'Available' : 'Unavailable';
+        }
+        var cell = row.querySelector('td:last-child');
+        if (cell) {
+            cell.innerHTML = isAvailable
+                ? '<button type="button" class="btn btn-sm btn-outline-secondary tbl-avail-btn" data-tid="' + tid + '" data-next="false"><i class="fas fa-ban mr-1"></i>Mark unavailable</button>'
+                : '<button type="button" class="btn btn-sm btn-success tbl-avail-btn" data-tid="' + tid + '" data-next="true"><i class="fas fa-check mr-1"></i>Mark available</button>';
+        }
+    }
+
+    setTimeout(function () { location.reload(); }, 30000);
+</script>
+}

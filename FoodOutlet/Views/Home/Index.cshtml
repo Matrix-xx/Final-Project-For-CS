@@ -10,9 +10,44 @@
             font-size: 1.2rem !important;
         }
 
+        /* Large watermark-style icons — same visual language as Order History & Resign cards */
+        .content .dashboard-small-box {
+            position: relative;
+            overflow: hidden;
+        }
+        .content .dashboard-small-box .icon {
+            position: absolute;
+            right: 0.6rem;
+            top: 0.5rem;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .content .dashboard-small-box .icon > i {
+            font-size: 4.25rem;
+            line-height: 1;
+            opacity: 0.35;
+            color:  blackgba(255, 255, 255, 0.95);
+        }
+        .content .dashboard-small-box.bg-warning .icon > i,
+        .content .dashboard-small-box.bg-gradient-warning .icon > i {
+            color: rgba(0, 0, 0, 0.18);
+        }
+        .content .dashboard-small-box .inner,
+        .content .dashboard-small-box > .small-box-footer {
+            position: relative;
+            z-index: 1;
+        }
+
         #incomeChartWrap {
             position: relative;
             height: 320px;
+            width: 100%;
+        }
+
+        #categoryPieWrap,
+        #topItemsBarWrap {
+            position: relative;
+            height: 280px;
             width: 100%;
         }
 
@@ -99,51 +134,51 @@
         {
             <div class="row">
                 <div class="col-lg-3 col-6">
-                    <div class="small-box bg-info">
+                    <div class="small-box bg-info dashboard-small-box">
                         <div class="inner">
                             <h3 id="staffCount">0</h3>
                             <p>Total Staff</p>
                         </div>
-                        <div class="icon"><i class="ion ion-person"></i></div>
+                        <div class="icon"><i class="fas fa-users"></i></div>
                         <a href="@Url.Action("StaffList", "Entry")" class="small-box-footer">More info <i class="fas fa-arrow-circle-right"></i></a>
                     </div>
                 </div>
 
                 <div class="col-lg-3 col-6">
-                    <div class="small-box bg-success">
+                    <div class="small-box bg-success dashboard-small-box">
                         <div class="inner">
                             <h3 id="categoryCount">0</h3>
                             <p>Categories</p>
                         </div>
-                        <div class="icon"><i class="ion ion-ios-list"></i></div>
+                        <div class="icon"><i class="fas fa-list-ul"></i></div>
                         <a href="@Url.Action("Category", "Entry")" class="small-box-footer">More info <i class="fas fa-arrow-circle-right"></i></a>
                     </div>
                 </div>
 
                 <div class="col-lg-3 col-6">
-                    <div class="small-box bg-warning">
+                    <div class="small-box bg-warning dashboard-small-box">
                         <div class="inner">
                             <h3 id="recipeCount">0</h3>
                             <p>Recipes</p>
                         </div>
-                        <div class="icon"><i class="ion ion-utensils"></i></div>
+                        <div class="icon"><i class="fas fa-utensils"></i></div>
                         <a href="@Url.Action("RecipeList", "Entry")" class="small-box-footer">More info <i class="fas fa-arrow-circle-right"></i></a>
                     </div>
                 </div>
 
                 <div class="col-lg-3 col-6">
-                    <div class="small-box txt_white" style="background-color:mediumslateblue;">
+                    <div class="small-box txt_white dashboard-small-box" style="background-color:mediumslateblue;">
                         <div class="inner">
                             <h3 id="roleCount">0</h3>
                             <p>Roles</p>
                         </div>
-                        <div class="icon"><i class="ion ion-person-stalker"></i></div>
+                        <div class="icon"><i class="fas fa-user-tag"></i></div>
                         <a href="@Url.Action("Role", "Entry")" class="small-box-footer txt_white">More info <i class="fas fa-arrow-circle-right"></i></a>
                     </div>
                 </div>
 
                 <div class="col-lg-3 col-6">
-                    <div class="small-box bg-primary">
+                    <div class="small-box bg-primary dashboard-small-box">
                         <div class="inner">
                             <h3 id="orderHistoryCount">0</h3>
                             <p>Table Order History</p>
@@ -154,7 +189,7 @@
                 </div>
 
                 <div class="col-lg-3 col-6">
-                    <div class="small-box bg-danger">
+                    <div class="small-box bg-danger dashboard-small-box">
                         <div class="inner">
                             <h3 id="resignMessageCount">0</h3>
                             <p>Resign Approval</p>
@@ -191,6 +226,33 @@
                     </div>
                 </div>
             </div>
+
+            <div class="row">
+                <div class="col-lg-6 col-12 mb-4">
+                    <div class="card card-outline card-success h-100">
+                        <div class="card-header">
+                            <h3 class="card-title font-weight-bold mb-0">Sales by category</h3>
+                        </div>
+                        <div class="card-body"> 
+                            <div id="categoryPieWrap">
+                                <canvas id="categoryPieChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-6 col-12 mb-4">
+                    <div class="card card-outline card-primary h-100">
+                        <div class="card-header">
+                            <h3 class="card-title font-weight-bold mb-0">Top 5 selling items</h3>
+                        </div>
+                        <div class="card-body">
+                            <div id="topItemsBarWrap">
+                                <canvas id="topItemsBarChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         }
     </div>
 </section>
@@ -202,21 +264,32 @@
 <script>
     var dashLoaded = false;
     var incomeChart = null;
+    var categoryPieChart = null;
+    var topItemsBarChart = null;
+    var piePalette = ['#17a2b8', '#28a745', '#ffc107', '#dc3545', '#6f42c1', '#fd7e14', '#20c997', '#e83e8c', '#007bff', '#6610f2'];
 
     $(document).ready(function () {
         if (dashLoaded) return;
         dashLoaded = true;
         loadCounts();
-        loadSalesChart(7, 'Last 7 Days');
+        reloadDashboard(7, 'Last 7 Days');
 
         $('.chart-filter-group .btn').on('click', function () {
             $('.chart-filter-group .btn').removeClass('active');
             $(this).addClass('active');
             var days = parseInt($(this).data('days'), 10) || 7;
             var label = $(this).data('label') || ('Last ' + days + ' Days');
-            loadSalesChart(days, label);
+            reloadDashboard(days, label);
         });
     });
+
+    function reloadDashboard(days, title) {
+        days = days || 7;
+        title = title || ('Last ' + days + ' Days');
+        loadSalesChart(days, title);
+        loadCategoryPie(days);
+        loadTopItemsBar(days);
+    }
 
     function loadCounts() {
         $.ajax({
@@ -389,6 +462,138 @@
             });
         }).fail(function () {
             console.error('Failed to load sales chart');
+        });
+    }
+
+    function loadCategoryPie(days) {
+        $.get('/api/admin/sales_by_category', { days: days }, function (res) {
+            var pieRows = (res && res.categories) ? res.categories : [];
+            var labels = [];
+            var vals = [];
+            var colors = [];
+            if (!pieRows.length) {
+                labels.push('No paid sales in period');
+                vals.push(1);
+                colors.push('#dee2e6');
+            } else {
+                pieRows.forEach(function (r, i) {
+                    labels.push(r.category_name || 'Uncategorized');
+                    vals.push(parseFloat(r.total_income || 0));
+                    colors.push(piePalette[i % piePalette.length]);
+                });
+            }
+            var hasData = pieRows.length > 0;
+            var sum = vals.reduce(function (a, b) { return a + b; }, 0);
+
+            if (categoryPieChart) categoryPieChart.destroy();
+
+            categoryPieChart = new Chart(document.getElementById('categoryPieChart').getContext('2d'), {
+                type: 'pie',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        data: vals,
+                        backgroundColor: colors,
+                        borderWidth: hasData ? 1 : 0,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    legend: { position: 'right' },
+                    tooltips: {
+                        callbacks: {
+                            label: function (tooltipItem, data) {
+                                if (!hasData) return ' No completed orders in this date range.';
+                                var i = tooltipItem.index;
+                                var name = data.labels[i] || '';
+                                var v = parseFloat(data.datasets[0].data[i] || 0);
+                                var pct = sum ? (Math.round(v / sum * 1000) / 10) : 0;
+                                return ' ' + name + ': ' + formatMmk(v) + ' MMK (' + pct + '%)';
+                            }
+                        }
+                    }
+                }
+            });
+        }).fail(function () {
+            console.error('Failed to load category pie chart');
+        });
+    }
+
+    function loadTopItemsBar(days) {
+        $.get('/api/admin/top_selling_items', { days: days, take: 5 }, function (res) {
+            var barRows = (res && res.items) ? res.items : [];
+            var labels = [];
+            var qtyVals = [];
+
+            barRows.forEach(function (r) {
+                labels.push(r.item_name ? String(r.item_name) : 'Item');
+                qtyVals.push(parseInt(r.qty_sold, 10) || 0);
+            });
+            if (!labels.length) {
+                labels.push('No sales');
+                qtyVals.push(0);
+            }
+            var hasData = barRows.length > 0;
+
+            if (topItemsBarChart) topItemsBarChart.destroy();
+
+            topItemsBarChart = new Chart(document.getElementById('topItemsBarChart').getContext('2d'), {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Units sold',
+                        data: qtyVals,
+                        backgroundColor: hasData ? 'rgba(23,162,184,0.75)' : 'rgba(206,212,218,0.6)',
+                        borderColor: hasData ? '#17a2b8' : '#adb5bd',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    legend: { display: false },
+                    scales: {
+                        xAxes: [{
+                            gridLines: { display: false },
+                            ticks: { autoSkip: false, maxRotation: 45, minRotation: 0 }
+                        }],
+                        yAxes: [{
+                            gridLines: { color: 'rgba(0,0,0,0.06)' },
+                            ticks: {
+                                beginAtZero: true,
+                                precision: 0,
+                                callback: function (v) { return v; }
+                            }
+                        }]
+                    },
+                    tooltips: {
+                        callbacks: {
+                            title: function (items) {
+                                if (!hasData || !items.length) return '';
+                                var idx = items[0].index;
+                                var name = labels[idx];
+                                return name || '';
+                            },
+                            label: function (tooltipItem) {
+                                if (!hasData) return 'Try a wider date range.';
+                                var i = tooltipItem.index;
+                                var q = qtyVals[i] != null ? qtyVals[i] : 0;
+                                var mk = '';
+                                var r = barRows[i];
+                                if (r && r.total_income != null) {
+                                    mk = ' · ' + formatMmk(parseFloat(r.total_income)) + ' MMK';
+                                }
+                                return 'Sold: ' + q + mk;
+                            }
+                        }
+                    }
+                }
+            });
+        }).fail(function () {
+            console.error('Failed to load top items chart');
         });
     }
 </script>

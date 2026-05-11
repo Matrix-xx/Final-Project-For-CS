@@ -262,7 +262,10 @@
                 <!-- Sidebar user panel -->
                 @{
                     var loggedName     = User.FindFirst("Name")?.Value ?? "Staff";
-                    var loggedRole     = User.FindFirst("RoleName")?.Value ?? "";
+                    var loggedRole     = (User.FindFirst("RoleName")?.Value ?? "").Trim();
+                    var isRoleAdmin    = loggedRole.Equals("Admin", StringComparison.OrdinalIgnoreCase);
+                    var isRoleChef     = loggedRole.Equals("Chef", StringComparison.OrdinalIgnoreCase);
+                    var isRoleCashier   = loggedRole.Equals("Cashier", StringComparison.OrdinalIgnoreCase);
                     var loggedPhoto    = User.FindFirst("Photo")?.Value ?? "";
                     var photoSrc       = string.IsNullOrEmpty(loggedPhoto)
                                             ? "/img/user2-160x160.jpg"
@@ -283,7 +286,7 @@
                 <nav class="mt-2">
                     <ul class="nav nav-pills nav-sidebar flex-column" data-widget="treeview" role="menu" data-accordion="false">
 
-                        @if (loggedRole == "Admin")
+                        @if (isRoleAdmin)
                         {
                             <!-- Staff group — Admin only -->
                             <li class="nav-item has-treeview">
@@ -369,7 +372,7 @@
                             </li>
                         }
 
-                        @if (loggedRole == "Admin" || loggedRole == "Chef")
+                        @if (isRoleAdmin || isRoleChef)
                         {
                             <!-- Inventory — Admin and Chef -->
                             <li class="nav-item">
@@ -380,36 +383,65 @@
                             </li>
                         }
 
-                        @if (loggedRole != "Admin")
+                        @if (!isRoleAdmin)
                         {
-                            <!-- Order workflow — role-specific queue -->
-                            <li class="nav-item">
-                                <a asp-controller="Order" asp-action="Index" class="nav-link">
-                                    @switch (loggedRole)
-                                    {
-                                        case "Cashier":
-                                            <i class="nav-icon fas fa-cash-register"></i>
-                                            <p>Orders</p>
-                                            break;
-                                        case "Chef":
+                            @if (isRoleCashier)
+                            {
+                                <li class="nav-item has-treeview">
+                                    <a href="#" class="nav-link">
+                                        <i class="nav-icon fas fa-cash-register"></i>
+                                        <p>Cashier<i class="fas fa-angle-left right"></i></p>
+                                    </a>
+                                    <ul class="nav nav-treeview">
+                                        <li class="nav-item">
+                                            <a asp-controller="Order" asp-action="CashierAvailability" class="nav-link nav-link-treeview">
+                                                <i class="fas fa-door-open"></i>
+                                                <p>Table availability</p>
+                                            </a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a asp-controller="Order" asp-action="CashierOrders" class="nav-link nav-link-treeview">
+                                                <i class="fas fa-clipboard-list"></i>
+                                                <p>Orders</p>
+                                            </a>
+                                        </li>
+                                        <li class="nav-item">
+                                            <a asp-controller="Order" asp-action="CashierPayment" class="nav-link nav-link-treeview">
+                                                <i class="fas fa-hand-holding-usd"></i>
+                                                <p>Payment</p>
+                                            </a>
+                                        </li>
+                                    </ul>
+                                </li>
+                            }
+                            else
+                            {
+                                <!-- Order workflow — Chef / Waiter / Cleaner -->
+                                <li class="nav-item">
+                                    <a asp-controller="Order" asp-action="Index" class="nav-link">
+                                        @if (isRoleChef)
+                                        {
                                             <i class="nav-icon fas fa-utensils"></i>
                                             <p>Cooking Queue</p>
-                                            break;
-                                        case "Waiter":
+                                        }
+                                        else if (loggedRole.Equals("Waiter", StringComparison.OrdinalIgnoreCase))
+                                        {
                                             <i class="nav-icon fas fa-concierge-bell"></i>
                                             <p>Serving Queue</p>
-                                            break;
-                                        case "Cleaner":
+                                        }
+                                        else if (loggedRole.Equals("Cleaner", StringComparison.OrdinalIgnoreCase))
+                                        {
                                             <i class="nav-icon fas fa-broom"></i>
                                             <p>Clean Queue</p>
-                                            break;
-                                        default:
+                                        }
+                                        else
+                                        {
                                             <i class="nav-icon fas fa-tasks"></i>
                                             <p>Orders</p>
-                                            break;
-                                    }
-                                </a>
-                            </li>
+                                        }
+                                    </a>
+                                </li>
+                            }
 
                             <!-- Resign Form -->
                             <li class="nav-item">

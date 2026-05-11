@@ -2,6 +2,7 @@
     ViewData["Title"] = "My Cart";
     Layout = "~/Views/Shared/_LayoutWebsite.cshtml";
     int tableNumber = ViewData["TableNumber"] != null ? (int)ViewData["TableNumber"] : 0;
+    bool tableQrAvailable = ViewData["TableQrAvailable"] is bool ta ? ta : true;
 }
 
 <style>
@@ -101,7 +102,24 @@
         padding: 2rem 1rem;
         color: #777;
     }
+
+    .table-qr-closed-banner-cart {
+        background: #343a40;
+        color: #fff;
+        border-radius: 14px;
+        padding: 1rem 1.25rem;
+        margin-bottom: 1rem;
+        text-align: center;
+        font-weight: 600;
+    }
 </style>
+
+@if (!tableQrAvailable)
+{
+    <div class="table-qr-closed-banner-cart">
+        <i class="fas fa-lock mr-2"></i>This table is not open for ordering. You can view your cart; confirm is disabled.
+    </div>
+}
 
 <div class="cart-wrap">
     <div id="cartRows"></div>
@@ -117,6 +135,7 @@
 @section Scripts {
 <script>
     const TABLE_NUMBER = @tableNumber;
+    const TABLE_QR_AVAILABLE = @(tableQrAvailable ? "true" : "false");
     const CART_KEY = `cart_table_${TABLE_NUMBER}`;
     const CART_SELECTION_KEY = `cart_selected_table_${TABLE_NUMBER}`;
     let cart = JSON.parse(localStorage.getItem(CART_KEY)) || {};
@@ -207,7 +226,15 @@
             window.location.href = `/table/${TABLE_NUMBER}`;
         });
 
+        if (!TABLE_QR_AVAILABLE) {
+            $('#confirmOrderBtn').prop('disabled', true).addClass('disabled');
+        }
+
         $('#confirmOrderBtn').on('click', function() {
+            if (!TABLE_QR_AVAILABLE) {
+                alert('This table is not open for ordering. Please ask staff.');
+                return;
+            }
             const items = getOrderItems();
             if (items.length === 0) {
                 alert('⚠ Your cart is empty.');

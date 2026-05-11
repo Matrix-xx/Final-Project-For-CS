@@ -1,6 +1,8 @@
 ﻿using FoodOutlet.AppCode;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using System.Security.Claims;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -28,6 +30,20 @@ builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationSc
 
 // Add services to the container.
 builder.Services.AddControllersWithViews();
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOrChef", policy =>
+        policy.RequireAssertion(ctx =>
+        {
+            var r = ctx.User.FindFirstValue(ClaimTypes.Role)
+                ?? ctx.User.FindFirst("RoleName")?.Value;
+            if (string.IsNullOrWhiteSpace(r)) return false;
+            r = r.Trim();
+            return r.Equals("Admin", StringComparison.OrdinalIgnoreCase)
+                || r.Equals("Chef", StringComparison.OrdinalIgnoreCase);
+        }));
+});
 
 var app = builder.Build();
 

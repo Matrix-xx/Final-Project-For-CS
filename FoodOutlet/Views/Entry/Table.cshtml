@@ -4,6 +4,7 @@
     int tableNumber = ViewData["TableNumber"] != null ? (int)ViewData["TableNumber"] : 0;
     var latestItemName = ViewData["LatestItemName"] as string ?? "New Items";
     var latestItemImage = ViewData["LatestItemImage"] as string ?? "/img/sticky-rice.jpg";
+    bool tableQrAvailable = ViewData["TableQrAvailable"] is bool ta ? ta : true;
 }
 
 <style>
@@ -463,10 +464,42 @@
             font-size: 0.85rem;
         }
     }
+
+    .ordering-locked .qty-btn:not(:disabled),
+    .ordering-locked .btn-add-cart,
+    .ordering-locked .btn-order-now {
+        opacity: 0.45;
+        pointer-events: none;
+    }
+
+    .table-qr-closed-banner {
+        background: linear-gradient(135deg, #5c5c5c 0%, #3d3d3d 100%);
+        color: #fff;
+        border-radius: 14px;
+        padding: 1rem 1.25rem;
+        margin: 0 auto 1rem;
+        width: min(650px, 92%);
+        text-align: center;
+        font-weight: 600;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    }
+
+    .table-qr-closed-banner i {
+        font-size: 1.4rem;
+        margin-right: 0.35rem;
+        vertical-align: middle;
+    }
 </style>
 
 <!-- Food Grid Wrapper -->
-<div class="food-grid-wrapper">
+<div class="food-grid-wrapper @(tableQrAvailable ? "" : "ordering-locked")">
+    @if (!tableQrAvailable)
+    {
+        <div class="table-qr-closed-banner">
+            <i class="fas fa-lock"></i>
+            This table is not open for ordering. Please ask staff.
+        </div>
+    }
     <!-- New Items Banner -->
     <div class="new-items-banner">
         <div class="new-items-image">
@@ -564,6 +597,7 @@
 @section Scripts {
 <script>
     const TABLE_NUMBER = @tableNumber;
+    const TABLE_QR_AVAILABLE = @(tableQrAvailable ? "true" : "false");
     const CART_KEY = `cart_table_${TABLE_NUMBER}`;
     const CART_SELECTION_KEY = `cart_selected_table_${TABLE_NUMBER}`;
     let cart = {};   // always start fresh — qty display always begins at 0
@@ -784,6 +818,10 @@
 
     // Submit order
     function submitOrderNow(recipeId, recipeName, qty) {
+        if (!TABLE_QR_AVAILABLE) {
+            alert('This table is not open for ordering. Please ask staff.');
+            return;
+        }
         if (!confirm(`Order ${qty} x ${recipeName}?`)) {
             return;
         }

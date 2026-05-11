@@ -75,6 +75,11 @@ namespace FoodOutlet.Controllers
         public IActionResult Index()
         {
             DebugLog("post-fix", "H1", "Controllers/OrderController.cs:Index", "order index hit", new { role = Role });
+
+            /* Cashier uses dedicated pages (availability / orders / payment). */
+            if (Role == "Cashier")
+                return RedirectToAction(nameof(CashierOrders));
+
             if (!RoleStatuses.TryGetValue(Role, out var statuses))
             {
                 DebugLog("post-fix", "H1", "Controllers/OrderController.cs:Index", "role not in RoleStatuses", new { role = Role, knownRoles = RoleStatuses.Keys });
@@ -86,15 +91,41 @@ namespace FoodOutlet.Controllers
             DebugLog("post-fix", "H3", "Controllers/OrderController.cs:Index", "orders loaded for role", new { role = Role, count = orders.Count });
             ViewData["Role"] = Role;
 
-            // Cashier's Served queue is shown grouped by table (one card per table)
-            if (Role == "Cashier")
-                ViewData["ServedByTable"] = _staff.GetServedByTable();
-
             // Cleaner's Cleaning queue is also grouped by table
             if (Role == "Cleaner")
                 ViewData["CleaningByTable"] = _staff.GetCleaningByTable();
 
             return View(orders);
+        }
+
+        /// <summary>Cashier: open/closed per table for QR ordering.</summary>
+        public IActionResult CashierAvailability()
+        {
+            if (Role != "Cashier") return Forbid();
+            ViewData["Role"] = Role;
+            ViewData["Title"] = "Cashier — Table availability";
+            ViewData["CashierTableAvailability"] = _staff.GetTableAvailabilityListForCashier();
+            return View();
+        }
+
+        /// <summary>Cashier: pending orders (approve/cancel).</summary>
+        public IActionResult CashierOrders()
+        {
+            if (Role != "Cashier") return Forbid();
+            ViewData["Role"] = Role;
+            ViewData["Title"] = "Cashier — Orders";
+            var pending = _staff.GetOrdersWithItems("Pending");
+            return View(pending);
+        }
+
+        /// <summary>Cashier: served tables awaiting payment then send to clean.</summary>
+        public IActionResult CashierPayment()
+        {
+            if (Role != "Cashier") return Forbid();
+            ViewData["Role"] = Role;
+            ViewData["Title"] = "Cashier — Payment";
+            ViewData["ServedByTable"] = _staff.GetServedByTable();
+            return View(new List<dynamic>());
         }
 
         [HttpPost("api/order/update_status")]
@@ -166,6 +197,23 @@ namespace FoodOutlet.Controllers
                 : StatusCode(500, new { success = false, message = result.message });
         }
 
+        /// <summary>Cashier toggles whether a table accepts new QR orders.</summary>
+        [HttpPost("api/order/set_table_availability")]
+        public IActionResult SetTableAvailability([FromBody] SetTableAvailabilityRequest? req)
+        {
+            if (req == null || req.table_list_id <= 0)
+                return BadRequest(new { success = false, message = "Invalid request." });
+
+            if (Role != "Cashier")
+                return StatusCode(403, new { success = false, message = "Only cashiers can change table availability." });
+
+            var result = _staff.SetTableAvailabilityForCashier(req.table_list_id, req.is_available);
+            bool ok = result.message == "Success";
+            return ok
+                ? Ok(new { success = true })
+                : StatusCode(500, new { success = false, message = result.message });
+        }
+
         public class UpdateStatusRequest
         {
             public int    order_id   { get; set; }
@@ -176,6 +224,12 @@ namespace FoodOutlet.Controllers
         {
             public string order_ids  { get; set; } = "";
             public string new_status { get; set; } = "";
+        }
+
+        public class SetTableAvailabilityRequest
+        {
+            public int    table_list_id { get; set; }
+            public bool   is_available  { get; set; }
         }
     }
 }
