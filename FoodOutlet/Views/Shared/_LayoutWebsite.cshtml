@@ -409,8 +409,28 @@
         }
 
         @@media (max-width: 480px) {
+            .main-header.navbar {
+                flex-wrap: wrap;
+                row-gap: 0.5rem;
+            }
+
+            .navbar-logo-section {
+                flex: 0 1 auto;
+                min-width: 0;
+                gap: 0.35rem;
+            }
+
             .table-badge {
-                display: none;
+                font-size: 0.72rem;
+                padding: 0.28rem 0.55rem;
+                max-width: 42vw;
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+
+            .navbar-actions {
+                flex: 0 0 auto;
+                margin-left: auto;
             }
 
             .navbar-search {
@@ -594,6 +614,56 @@
             }
 
             updateTableName();
+
+            // #region agent log
+            (function debugTableBadgeVisibility() {
+                function emit(hypothesisId, message, data) {
+                    var payload = JSON.stringify({
+                        sessionId: '417eff',
+                        runId: 'post-fix',
+                        hypothesisId: hypothesisId,
+                        location: '_LayoutWebsite.cshtml:documentReady',
+                        message: message,
+                        data: data,
+                        timestamp: Date.now()
+                    });
+                    fetch('http://127.0.0.1:7496/ingest/c39adf81-c1e8-4f36-b9b1-8c128916a06f', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '417eff' },
+                        body: payload
+                    }).catch(function () { });
+                    fetch('/__debug/browser-log', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: payload
+                    }).catch(function () { });
+                }
+                function snapshot() {
+                    var el = document.getElementById('tableNameDisplay');
+                    var cs = el ? window.getComputedStyle(el) : null;
+                    var r = el ? el.getBoundingClientRect() : null;
+                    emit('H1', 'table badge computed display', {
+                        innerWidth: window.innerWidth,
+                        max480: window.matchMedia('(max-width: 480px)').matches,
+                        badgeDisplay: cs ? cs.display : null,
+                        badgeVisibility: cs ? cs.visibility : null,
+                        badgeText: el ? (el.textContent || '').trim().slice(0, 40) : null,
+                        badgeRectW: r ? r.width : null
+                    });
+                    emit('H2', 'navbar overflow/clipping', {
+                        nav: (function () {
+                            var n = document.querySelector('.main-header.navbar');
+                            if (!n) return null;
+                            var csn = window.getComputedStyle(n);
+                            var rn = n.getBoundingClientRect();
+                            return { overflow: csn.overflow, overflowX: csn.overflowX, flexWrap: csn.flexWrap, clientWidth: n.clientWidth, scrollWidth: n.scrollWidth, rectW: rn.width };
+                        })()
+                    });
+                }
+                snapshot();
+                window.addEventListener('resize', function () { snapshot(); });
+            })();
+            // #endregion
 
             // Filter Panel Toggle
             $('#filterToggleBtn').on('click', function() {

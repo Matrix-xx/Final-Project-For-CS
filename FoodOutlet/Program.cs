@@ -71,4 +71,18 @@ app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
+if (app.Environment.IsDevelopment())
+{
+    app.MapPost("/__debug/browser-log", async (HttpContext ctx, IWebHostEnvironment env) =>
+    {
+        using var reader = new StreamReader(ctx.Request.Body);
+        var body = (await reader.ReadToEndAsync()).Trim();
+        if (string.IsNullOrEmpty(body))
+            return Results.BadRequest();
+        var logPath = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "debug-417eff.log"));
+        await File.AppendAllTextAsync(logPath, body + Environment.NewLine);
+        return Results.Ok();
+    });
+}
+
 app.Run();
