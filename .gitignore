@@ -7,14 +7,18 @@ obj/
 *.so
 *.dylib
 
-# Visual Studio
+# Visual Studio / Copilot cache (CodeChunks.db, SemanticSymbols.db, etc.)
 .vs/
+**/.vs/
+**/CopilotIndices/
 .vscode/
 *.sln.iml
 *.suo
 *.user
+*.csproj.user
 *.userosscache
 *.sln.docstates
+*.mdb
 
 # IDEs
 .idea/
@@ -33,9 +37,11 @@ FoodOutlet/wwwroot/tableQR/*
 !FoodOutlet/wwwroot/uploads/.gitkeep
 !FoodOutlet/wwwroot/tableQR/.gitkeep
 
-# Application logs
+# Application logs & debug session files
 logs/
 *.log
+debug-*.log
+.cursor/debug-*.log
 
 # Local database files (if applicable)
 *.db
