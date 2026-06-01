@@ -85,4 +85,4 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-app.Run();
+app.Run("http://0.0.0.0:8080");
