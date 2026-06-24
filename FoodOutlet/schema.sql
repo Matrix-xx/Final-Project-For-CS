@@ -83,39 +83,6 @@ CREATE TABLE Table_Lists (
 );
 
 -- =========================
--- Status (Kitchen Status)
--- =========================
-CREATE TABLE Status (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-
--- =========================
--- Payment Methods
--- =========================
-CREATE TABLE Payment_Methods (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    payment_name VARCHAR(50),
-    note TEXT,
-    is_deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- =========================
--- Payments
--- =========================
-CREATE TABLE Payments (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    payment_method_id INT,
-    payment_status VARCHAR(20),
-    amount DECIMAL(10,2),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (payment_method_id) REFERENCES Payment_Methods(id)
-);
-
--- =========================
 -- Orders
 -- =========================
 CREATE TABLE `Order` (
