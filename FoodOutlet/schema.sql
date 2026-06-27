@@ -73,14 +73,32 @@ CREATE TABLE Inventories (
 );
 
 -- =========================
--- Table Lists
+-- Table Lists (registered tables + QR + availability)
 -- =========================
 CREATE TABLE Table_Lists (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    table_number INT UNIQUE,
     table_name VARCHAR(50),
-    is_available TINYINT(1) NOT NULL DEFAULT 1,
+    qr_code VARCHAR(512),
+    is_available TINYINT(1) NOT NULL DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- =========================
+-- Status (order line-item workflow states)
+-- =========================
+CREATE TABLE Status (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL
+);
+
+INSERT INTO Status (id, name) VALUES
+(1, 'Pending'),
+(2, 'Preparing'),
+(3, 'Served'),
+(4, 'Done'),
+(5, 'Cleaning'),
+(6, 'Cancelled');
 
 -- =========================
 -- Orders
@@ -107,17 +125,10 @@ CREATE TABLE Order_Detail (
     recipe_id INT,
     qty INT,
     status_id INT,
+    order_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (table_id) REFERENCES Table_Lists(id),
     FOREIGN KEY (recipe_id) REFERENCES Recipes(id),
     FOREIGN KEY (status_id) REFERENCES Status(id)
 );
-
--- schema-create-tables.sql
-CREATE TABLE `tables` (
-  `id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  `table_number` INT NOT NULL UNIQUE,
-  `qr_code` VARCHAR(512) NULL,
-  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

@@ -1156,60 +1156,155 @@ ORDER BY r.recipe_name, r.id";
         #region Order Management
 
         /// <summary>
-        /// FK on Order / order_detail references table_lists.id (not tables.id).
-        /// Maps a QR-registered table_number to a table_lists row, creating one if needed.
+        /// FK on Order / order_detail references table_lists.id.
+        /// Maps a registered table_number to a table_lists row.
         /// </summary>
         private int ResolveTableListIdForOrder(int tableNumber, MySqlConnection conn)
         {
-            using (var verify = new MySqlCommand("SELECT 1 FROM `tables` WHERE table_number = @tn LIMIT 1", conn))
+            EnsureUnifiedTableLists(conn);
+
+            using (var byNum = new MySqlCommand("SELECT id FROM table_lists WHERE table_number = @tn LIMIT 1", conn))
             {
-                verify.Parameters.AddWithValue("@tn", tableNumber);
-                var tableRowExists = verify.ExecuteScalar() != null;
-                if (!tableRowExists)
-                    return 0;
+                byNum.Parameters.AddWithValue("@tn", tableNumber);
+                var o = byNum.ExecuteScalar();
+                if (o != null)
+                    return Convert.ToInt32(o);
             }
 
-            try
+            return 0;
+        }
+
+        private static bool _unifiedTableListsMigrated = false;
+        private static readonly object _unifiedTableListsLock = new();
+
+        /// <summary>
+        /// Merges legacy <c>tables</c> into <c>table_lists</c> (table_number, qr_code) once per app lifetime.
+        /// </summary>
+        private void EnsureUnifiedTableLists(MySqlConnection conn)
+        {
+            if (_unifiedTableListsMigrated) return;
+            lock (_unifiedTableListsLock)
             {
-                using (var byNum = new MySqlCommand("SELECT id FROM `table_lists` WHERE table_number = @tn LIMIT 1", conn))
+                if (_unifiedTableListsMigrated) return;
+                try
                 {
-                    byNum.Parameters.AddWithValue("@tn", tableNumber);
-                    var o = byNum.ExecuteScalar();
-                    if (o != null)
-                        return Convert.ToInt32(o);
-                }
-            }
-            catch (MySqlException)
-            {
-                // Schemas that only have table_name (no table_number column)
-            }
+                    using (var colNum = new MySqlCommand(
+                               "SELECT COUNT(*) FROM information_schema.columns " +
+                               "WHERE table_schema = DATABASE() AND table_name = 'table_lists' AND column_name = 'table_number'", conn))
+                    {
+                        if (Convert.ToInt32(colNum.ExecuteScalar()) == 0)
+                        {
+                            using var alter = new MySqlCommand(
+                                "ALTER TABLE table_lists ADD COLUMN table_number INT NULL UNIQUE AFTER id", conn);
+                            alter.ExecuteNonQuery();
+                        }
+                    }
 
-            string[] nameCandidates = { tableNumber.ToString(), $"Table {tableNumber}" };
-            foreach (var name in nameCandidates)
-            {
-                using (var cmd = new MySqlCommand("SELECT id FROM `table_lists` WHERE table_name = @n LIMIT 1", conn))
+                    using (var colQr = new MySqlCommand(
+                               "SELECT COUNT(*) FROM information_schema.columns " +
+                               "WHERE table_schema = DATABASE() AND table_name = 'table_lists' AND column_name = 'qr_code'", conn))
+                    {
+                        if (Convert.ToInt32(colQr.ExecuteScalar()) == 0)
+                        {
+                            using var alter = new MySqlCommand(
+                                "ALTER TABLE table_lists ADD COLUMN qr_code VARCHAR(512) NULL AFTER table_name", conn);
+                            alter.ExecuteNonQuery();
+                        }
+                    }
+
+                    using (var legacy = new MySqlCommand(
+                               "SELECT COUNT(*) FROM information_schema.tables " +
+                               "WHERE table_schema = DATABASE() AND table_name = 'tables'", conn))
+                    {
+                        if (Convert.ToInt32(legacy.ExecuteScalar()) > 0)
+                        {
+                            using var upd = new MySqlCommand(
+                                "UPDATE table_lists tl " +
+                                "INNER JOIN `tables` t ON (" +
+                                "  tl.table_name = CAST(t.table_number AS CHAR) " +
+                                "  OR tl.table_name = CONCAT('Table ', t.table_number)" +
+                                ") " +
+                                "SET tl.table_number = t.table_number, " +
+                                "    tl.qr_code = COALESCE(NULLIF(tl.qr_code, ''), t.qr_code) " +
+                                "WHERE tl.table_number IS NULL", conn);
+                            upd.ExecuteNonQuery();
+
+                            using var ins = new MySqlCommand(
+                                "INSERT INTO table_lists (table_number, table_name, qr_code, is_available, created_at) " +
+                                "SELECT t.table_number, CAST(t.table_number AS CHAR), t.qr_code, 1, t.created_at " +
+                                "FROM `tables` t " +
+                                "WHERE NOT EXISTS (" +
+                                "  SELECT 1 FROM table_lists tl WHERE tl.table_number = t.table_number" +
+                                ")", conn);
+                            ins.ExecuteNonQuery();
+                        }
+                    }
+
+                    using (var backfill = new MySqlCommand(
+                               "UPDATE table_lists " +
+                               "SET table_number = CAST(TRIM(table_name) AS UNSIGNED) " +
+                               "WHERE table_number IS NULL " +
+                               "  AND TRIM(IFNULL(table_name,'')) REGEXP '^[0-9]+$'", conn))
+                    {
+                        backfill.ExecuteNonQuery();
+                    }
+                }
+                catch (Exception ex)
                 {
-                    cmd.Parameters.AddWithValue("@n", name);
-                    var o = cmd.ExecuteScalar();
-                    if (o != null)
-                        return Convert.ToInt32(o);
+                    Console.WriteLine("EnsureUnifiedTableLists error: " + ex.Message);
                 }
-            }
 
-            using (var ins = new MySqlCommand("INSERT INTO `table_lists` (table_name) VALUES (@n)", conn))
-            {
-                ins.Parameters.AddWithValue("@n", tableNumber.ToString());
-                ins.ExecuteNonQuery();
+                _unifiedTableListsMigrated = true;
             }
+        }
 
-            using (var lid = new MySqlCommand("SELECT LAST_INSERT_ID()", conn))
+        private static bool _statusTableMigrated = false;
+        private static readonly object _statusTableLock = new();
+
+        /// <summary>
+        /// Creates the <c>status</c> lookup table when missing (required by order_detail.status_id).
+        /// </summary>
+        private void EnsureStatusTable(MySqlConnection conn)
+        {
+            if (_statusTableMigrated) return;
+            lock (_statusTableLock)
             {
-                return Convert.ToInt32(lid.ExecuteScalar());
+                if (_statusTableMigrated) return;
+                try
+                {
+                    using var check = new MySqlCommand(
+                        "SELECT COUNT(*) FROM information_schema.tables " +
+                        "WHERE table_schema = DATABASE() AND table_name = 'status'", conn);
+                    if (Convert.ToInt32(check.ExecuteScalar()) == 0)
+                    {
+                        using var create = new MySqlCommand(
+                            "CREATE TABLE `status` (" +
+                            "id INT AUTO_INCREMENT PRIMARY KEY, " +
+                            "name VARCHAR(50) NOT NULL" +
+                            ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4", conn);
+                        create.ExecuteNonQuery();
+
+                        using var seed = new MySqlCommand(
+                            "INSERT INTO `status` (id, name) VALUES " +
+                            "(1, 'Pending'), (2, 'Preparing'), (3, 'Served'), " +
+                            "(4, 'Done'), (5, 'Cleaning'), (6, 'Cancelled')", conn);
+                        seed.ExecuteNonQuery();
+                        Console.WriteLine("status table created and seeded.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("EnsureStatusTable error: " + ex.Message);
+                }
+
+                _statusTableMigrated = true;
             }
         }
 
         private int ResolveInitialStatusId(MySqlConnection conn)
         {
+            EnsureStatusTable(conn);
+
             using (var byId = new MySqlCommand("SELECT id FROM `status` WHERE id = 1 LIMIT 1", conn))
             {
                 var existing = byId.ExecuteScalar();
@@ -1237,24 +1332,185 @@ ORDER BY r.recipe_name, r.id";
         }
 
         /// <summary>
-        /// Call after inserting into `tables` so Order FK (table_lists) has a matching row.
+        /// Ensures <c>table_lists</c> has merged columns and legacy <c>tables</c> data is migrated.
+        /// Call before any direct query on table_lists from controllers.
         /// </summary>
-        public void EnsureTableListRowForRegisteredTable(int tableNumber)
+        public void EnsureTableListsSchema()
         {
             try
             {
                 using (var conn = _connectionFactory.CreateConnection())
                 {
                     conn.Open();
-                    var id = ResolveTableListIdForOrder(tableNumber, conn);
-                    if (id == 0)
-                        Console.WriteLine("EnsureTableListRowForRegisteredTable: no tables row for #" + tableNumber);
+                    EnsureUnifiedTableLists(conn);
+                    EnsureTableListsHasAvailability(conn);
                 }
             }
             catch (Exception ex)
             {
-                Console.WriteLine("EnsureTableListRowForRegisteredTable: " + ex.Message);
+                Console.WriteLine("EnsureTableListsSchema: " + ex.Message);
             }
+        }
+
+        public List<Models.Table> GetAllRegisteredTables()
+        {
+            var list = new List<Models.Table>();
+            try
+            {
+                using (var conn = _connectionFactory.CreateConnection())
+                {
+                    conn.Open();
+                    EnsureUnifiedTableLists(conn);
+                    using (var cmd = new MySqlCommand(
+                               "SELECT id, table_number, qr_code, created_at FROM table_lists " +
+                               "WHERE table_number IS NOT NULL ORDER BY table_number ASC", conn))
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        while (rdr.Read())
+                        {
+                            list.Add(new Models.Table
+                            {
+                                id = Convert.ToInt32(rdr["id"]),
+                                table_number = Convert.ToInt32(rdr["table_number"]),
+                                qr_code = rdr["qr_code"]?.ToString() ?? "",
+                                created_at = Convert.ToDateTime(rdr["created_at"])
+                            });
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("GetAllRegisteredTables error: " + ex.Message);
+            }
+
+            return list;
+        }
+
+        public bool RegisteredTableNumberExists(int tableNumber)
+        {
+            if (tableNumber <= 0) return false;
+            try
+            {
+                using (var conn = _connectionFactory.CreateConnection())
+                {
+                    conn.Open();
+                    EnsureUnifiedTableLists(conn);
+                    using (var cmd = new MySqlCommand(
+                               "SELECT COUNT(*) FROM table_lists WHERE table_number = @tn", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@tn", tableNumber);
+                        return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("RegisteredTableNumberExists error: " + ex.Message);
+                return false;
+            }
+        }
+
+        public string? GetRegisteredTableQrPath(int id)
+        {
+            if (id <= 0) return null;
+            try
+            {
+                using (var conn = _connectionFactory.CreateConnection())
+                {
+                    conn.Open();
+                    EnsureUnifiedTableLists(conn);
+                    using (var cmd = new MySqlCommand(
+                               "SELECT qr_code FROM table_lists WHERE id = @id LIMIT 1", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", id);
+                        return cmd.ExecuteScalar()?.ToString();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("GetRegisteredTableQrPath error: " + ex.Message);
+                return null;
+            }
+        }
+
+        public Message InsertRegisteredTable(int tableNumber, string qrCodeRelativePath)
+        {
+            var msg = new Message();
+            if (tableNumber <= 0)
+            {
+                msg.message = "Error: Invalid table number.";
+                return msg;
+            }
+
+            try
+            {
+                using (var conn = _connectionFactory.CreateConnection())
+                {
+                    conn.Open();
+                    EnsureUnifiedTableLists(conn);
+                    EnsureTableListsHasAvailability(conn);
+                    using (var cmd = new MySqlCommand(
+                               "INSERT INTO table_lists (table_number, table_name, qr_code, is_available, created_at) " +
+                               "VALUES (@tn, @name, @qr, 0, NOW())", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@tn", tableNumber);
+                        cmd.Parameters.AddWithValue("@name", tableNumber.ToString());
+                        cmd.Parameters.AddWithValue("@qr", qrCodeRelativePath);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+
+                msg.message = "Success";
+            }
+            catch (Exception ex)
+            {
+                msg.message = "Error: " + ex.Message;
+                Console.WriteLine("InsertRegisteredTable error: " + ex.Message);
+            }
+
+            return msg;
+        }
+
+        public Message DeleteRegisteredTable(int id)
+        {
+            var msg = new Message();
+            if (id <= 0)
+            {
+                msg.message = "Error: Invalid table.";
+                return msg;
+            }
+
+            try
+            {
+                using (var conn = _connectionFactory.CreateConnection())
+                {
+                    conn.Open();
+                    EnsureUnifiedTableLists(conn);
+                    using (var cmd = new MySqlCommand("DELETE FROM table_lists WHERE id = @id", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", id);
+                        int n = cmd.ExecuteNonQuery();
+                        msg.message = n > 0 ? "Success" : "Error: Table not found.";
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                msg.message = "Error: " + ex.Message;
+                Console.WriteLine("DeleteRegisteredTable error: " + ex.Message);
+            }
+
+            return msg;
+        }
+
+        /// <summary>
+        /// Kept for backward compatibility; runs schema migration only.
+        /// </summary>
+        public void EnsureTableListRowForRegisteredTable(int tableNumber)
+        {
+            EnsureTableListsSchema();
         }
 
         /// <summary>
@@ -1272,6 +1528,7 @@ ORDER BY r.recipe_name, r.id";
         /// </summary>
         private void EnsureTableListsHasAvailability(MySqlConnection conn)
         {
+            EnsureUnifiedTableLists(conn);
             if (_tableListsAvailMigrated) return;
             lock (_tableListsAvailLock)
             {
@@ -1389,6 +1646,7 @@ ORDER BY r.recipe_name, r.id";
                     conn.Open();
                     EnsureOrderDetailOrderId(conn); // must run before transaction
                     EnsureTableListsHasAvailability(conn);
+                    EnsureStatusTable(conn);
                     using (var tx = conn.BeginTransaction())
                     {
                         int tableId = ResolveTableListIdForOrder(tableNumber, conn);
@@ -2087,15 +2345,15 @@ ORDER BY r.recipe_name, r.id";
                 using (var conn = _connectionFactory.CreateConnection())
                 {
                     conn.Open();
+                    EnsureUnifiedTableLists(conn);
                     EnsureTableListsHasAvailability(conn);
-                    // Numeric table names ("1","2","12") → numeric order; others → alphabetical after numerics
                     const string tblSql =
-                        @"SELECT id AS table_list_id, table_name, COALESCE(is_available, 1) AS is_available
+                        @"SELECT id AS table_list_id,
+                                 COALESCE(CAST(table_number AS CHAR), TRIM(table_name)) AS table_name,
+                                 COALESCE(is_available, 1) AS is_available
                           FROM table_lists
-                          ORDER BY
-                            CASE WHEN TRIM(IFNULL(table_name,'')) REGEXP '^[0-9]+$' THEN 0 ELSE 1 END ASC,
-                            CASE WHEN TRIM(IFNULL(table_name,'')) REGEXP '^[0-9]+$' THEN CAST(TRIM(table_name) AS UNSIGNED) ELSE 0 END ASC,
-                            TRIM(IFNULL(table_name,'')) ASC";
+                          WHERE table_number IS NOT NULL
+                          ORDER BY table_number ASC";
                     using (var cmd = new MySqlCommand(tblSql, conn))
                     using (var rdr = cmd.ExecuteReader())
                     {

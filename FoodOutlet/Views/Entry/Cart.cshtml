@@ -134,8 +134,8 @@
 
 @section Scripts {
 <script>
-    const TABLE_NUMBER = @tableNumber;
-    const TABLE_QR_AVAILABLE = @(tableQrAvailable ? "true" : "false");
+    const TABLE_NUMBER = @System.Text.Json.JsonSerializer.Serialize(tableNumber);
+    const TABLE_QR_AVAILABLE = @System.Text.Json.JsonSerializer.Serialize(tableQrAvailable);
     const CART_KEY = `cart_table_${TABLE_NUMBER}`;
     const CART_SELECTION_KEY = `cart_selected_table_${TABLE_NUMBER}`;
     let cart = JSON.parse(localStorage.getItem(CART_KEY)) || {};

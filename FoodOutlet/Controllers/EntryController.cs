@@ -124,27 +124,7 @@ namespace FoodOutlet.Controllers
         // GET: /Entry/TableRegistration - Display table list and form
         public IActionResult TableRegistration()
         {
-            var conn = _connectionFactory.CreateConnection();
-            conn.Open();
-            var cmd = new MySqlCommand("SELECT id, table_number, qr_code, created_at FROM `tables` ORDER BY table_number ASC", conn);
-            var rdr = cmd.ExecuteReader();
-            var tables = new List<Table>();
-
-            while (rdr.Read())
-            {
-                tables.Add(new Table
-                {
-                    id = Convert.ToInt32(rdr["id"]),
-                    table_number = Convert.ToInt32(rdr["table_number"]),
-                    qr_code = rdr["qr_code"]?.ToString() ?? "",
-                    created_at = Convert.ToDateTime(rdr["created_at"])
-                });
-            }
-
-            rdr.Close();
-            conn.Close();
-
-            return View(tables);
+            return View(_staff.GetAllRegisteredTables());
         }
 
         // POST: /Entry/CreateTable - Generate QR and save table
@@ -155,37 +135,24 @@ namespace FoodOutlet.Controllers
             // Backend validation - check if number is valid
             if (!ModelState.IsValid)
             {
-                // Reload table list and show form again
-                var tables = GetAllTables();
-                return View("TableRegistration", tables);
+                return View("TableRegistration", _staff.GetAllRegisteredTables());
             }
 
             // Additional validation - table number must be positive
             if (table_number <= 0)
             {
                 ModelState.AddModelError("table_number", "Table number must be greater than 0");
-                var tables = GetAllTables();
-                return View("TableRegistration", tables);
+                return View("TableRegistration", _staff.GetAllRegisteredTables());
+            }
+
+            if (_staff.RegisteredTableNumberExists(table_number))
+            {
+                TempData["Error"] = $"Table #{table_number} already exists. QR is stored for this table.";
+                return RedirectToAction(nameof(TableRegistration));
             }
 
             try
             {
-                var conn = _connectionFactory.CreateConnection();
-                conn.Open();
-
-                // Check if table already exists
-                var chkCmd = new MySqlCommand("SELECT id FROM `tables` WHERE table_number = @tn LIMIT 1", conn);
-                chkCmd.Parameters.AddWithValue("@tn", table_number);
-                var existingId = chkCmd.ExecuteScalar();
-
-                if (existingId != null)
-                {
-                    TempData["Error"] = $"Table #{table_number} already exists. QR is stored for this table.";
-                    conn.Close();
-                    return RedirectToAction(nameof(TableRegistration));
-                }
-
-                // Generate QR code URL
                 var url = $"{Request.Scheme}://{Request.Host}/table/{table_number}";
 
                 // Create folder if it doesn't exist
@@ -211,17 +178,12 @@ namespace FoodOutlet.Controllers
 
                 var relativePath = $"/tableQR/{fileName}";
 
-                // Insert into database
-                var insCmd = new MySqlCommand(
-                    "INSERT INTO `tables` (table_number, qr_code, created_at) VALUES (@tn, @qr, NOW())",
-                    conn);
-                insCmd.Parameters.AddWithValue("@tn", table_number);
-                insCmd.Parameters.AddWithValue("@qr", relativePath);
-                insCmd.ExecuteNonQuery();
-
-                _staff.EnsureTableListRowForRegisteredTable(table_number);
-
-                conn.Close();
+                var result = _staff.InsertRegisteredTable(table_number, relativePath);
+                if (result.message != "Success")
+                {
+                    TempData["Error"] = result.message;
+                    return RedirectToAction(nameof(TableRegistration));
+                }
 
                 TempData["Success"] = $"Table #{table_number} created successfully. QR code generated and ready to scan!";
             }
@@ -240,21 +202,13 @@ namespace FoodOutlet.Controllers
         {
             try
             {
-                var conn = _connectionFactory.CreateConnection();
-                conn.Open();
-
-                // Get QR code path before deletion
-                var selCmd = new MySqlCommand("SELECT qr_code FROM `tables` WHERE id = @id LIMIT 1", conn);
-                selCmd.Parameters.AddWithValue("@id", id);
-                var result = selCmd.ExecuteScalar();
-                var qrPath = result?.ToString() ?? "";
-
-                // Delete from database
-                var delCmd = new MySqlCommand("DELETE FROM `tables` WHERE id = @id", conn);
-                delCmd.Parameters.AddWithValue("@id", id);
-                delCmd.ExecuteNonQuery();
-
-                conn.Close();
+                var qrPath = _staff.GetRegisteredTableQrPath(id) ?? "";
+                var result = _staff.DeleteRegisteredTable(id);
+                if (result.message != "Success")
+                {
+                    TempData["Error"] = result.message;
+                    return RedirectToAction(nameof(TableRegistration));
+                }
 
                 // Delete QR file if it exists
                 if (!string.IsNullOrEmpty(qrPath))
@@ -281,21 +235,8 @@ namespace FoodOutlet.Controllers
         [HttpGet("table/{tableNumber}")]
         public IActionResult Table(int tableNumber)
         {
-            var conn = _connectionFactory.CreateConnection();
-            conn.Open();
-
-            // Check if table exists
-            var chkCmd = new MySqlCommand("SELECT COUNT(*) FROM `tables` WHERE table_number = @tn", conn);
-            chkCmd.Parameters.AddWithValue("@tn", tableNumber);
-            var cnt = Convert.ToInt32(chkCmd.ExecuteScalar());
-
-            if (cnt == 0)
-            {
-                conn.Close();
+            if (!_staff.RegisteredTableNumberExists(tableNumber))
                 return NotFound();
-            }
-
-            conn.Close();
 
             // Load recipes and stock
             var recipes = _staff.GetAllRecipes();
@@ -373,15 +314,7 @@ namespace FoodOutlet.Controllers
         [HttpGet("table/{tableNumber}/cart")]
         public IActionResult Cart(int tableNumber)
         {
-            var conn = _connectionFactory.CreateConnection();
-            conn.Open();
-
-            var chkCmd = new MySqlCommand("SELECT COUNT(*) FROM `tables` WHERE table_number = @tn", conn);
-            chkCmd.Parameters.AddWithValue("@tn", tableNumber);
-            var cnt = Convert.ToInt32(chkCmd.ExecuteScalar());
-            conn.Close();
-
-            if (cnt == 0)
+            if (!_staff.RegisteredTableNumberExists(tableNumber))
                 return NotFound();
 
             ViewData["TableNumber"] = tableNumber;
@@ -615,25 +548,15 @@ namespace FoodOutlet.Controllers
         [HttpGet("api/get_all_tables")]
         public Dictionary<string, dynamic> GetAllTables()
         {
-            var conn = _connectionFactory.CreateConnection();
-            conn.Open();
-            var cmd = new MySqlCommand("SELECT id, table_number, qr_code, created_at FROM `tables` ORDER BY table_number ASC", conn);
-            var rdr = cmd.ExecuteReader();
-            var tables = new List<dynamic>();
-
-            while (rdr.Read())
-            {
-                tables.Add(new
+            var tables = _staff.GetAllRegisteredTables()
+                .Select(t => (dynamic)new
                 {
-                    id = Convert.ToInt32(rdr["id"]),
-                    table_number = Convert.ToInt32(rdr["table_number"]),
-                    qr_code = rdr["qr_code"]?.ToString() ?? "",
-                    created_at = Convert.ToDateTime(rdr["created_at"])
-                });
-            }
-
-            rdr.Close();
-            conn.Close();
+                    id = t.id,
+                    table_number = t.table_number,
+                    qr_code = t.qr_code,
+                    created_at = t.created_at
+                })
+                .ToList();
 
             return new Dictionary<string, dynamic> { { "tables", tables } };
         }

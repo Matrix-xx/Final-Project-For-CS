@@ -53,21 +53,21 @@
                                             <span class="badge @(isOpen ? "badge-success" : "badge-secondary") tbl-avail-badge" data-tid="@tid">
                                                 @(isOpen ? "Available" : "Unavailable")
                                             </span>
-                                            <small class="text-muted d-block mt-1">Cleaner finishes → Available. Send to Clean → Unavailable.</small>
+                                            <small class="text-muted d-block mt-1">Unavailable = guests can order. Available = ordering closed.</small>
                                         </td>
                                         <td class="align-middle text-right">
                                             @if (isOpen)
                                             {
                                                 <button type="button" class="btn btn-sm btn-outline-secondary tbl-avail-btn"
                                                         data-tid="@tid" data-next="false">
-                                                    <i class="fas fa-ban mr-1"></i>Mark unavailable
+                                                    <i class="fas fa-ban mr-1"></i>Mark Available
                                                 </button>
                                             }
                                             else
                                             {
                                                 <button type="button" class="btn btn-sm btn-success tbl-avail-btn"
                                                         data-tid="@tid" data-next="true">
-                                                    <i class="fas fa-check mr-1"></i>Mark available
+                                                    <i class="fas fa-check mr-1"></i>Mark Available
                                                 </button>
                                             }
                                         </td>
