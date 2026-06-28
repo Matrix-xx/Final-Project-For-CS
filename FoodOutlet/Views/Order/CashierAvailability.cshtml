@@ -50,8 +50,8 @@
                                     <tr id="tbl-avail-row-@tid">
                                         <td class="align-middle font-weight-bold">@t.table_name</td>
                                         <td class="align-middle">
-                                            <span class="badge @(isOpen ? "badge-success" : "badge-secondary") tbl-avail-badge" data-tid="@tid">
-                                                @(isOpen ? "Available" : "Unavailable")
+                                            <span class="badge @(isOpen ? "badge-secondary" : "badge-success") tbl-avail-badge" data-tid="@tid">
+                                                @(isOpen ? "Unavailable" : "Available")
                                             </span>
                                             <small class="text-muted d-block mt-1">Unavailable = guests can order. Available = ordering closed.</small>
                                         </td>
@@ -59,15 +59,15 @@
                                             @if (isOpen)
                                             {
                                                 <button type="button" class="btn btn-sm btn-outline-secondary tbl-avail-btn"
-                                                        data-tid="@tid" data-next="false">
+                                                        data-tid="@tid" data-action="mark-available">
                                                     <i class="fas fa-ban mr-1"></i>Mark Available
                                                 </button>
                                             }
                                             else
                                             {
                                                 <button type="button" class="btn btn-sm btn-success tbl-avail-btn"
-                                                        data-tid="@tid" data-next="true">
-                                                    <i class="fas fa-check mr-1"></i>Mark Available
+                                                        data-tid="@tid" data-action="mark-unavailable">
+                                                    <i class="fas fa-check mr-1"></i>Mark Unavailable
                                                 </button>
                                             }
                                         </td>
@@ -82,48 +82,99 @@
     </div>
 </section>
 
+<!-- Toast notification container for error messages -->
+<div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 9999;">
+</div>
+
+<!-- Toast notification container for error messages -->
+<div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 9999;">
+</div>
+
 @section Scripts {
 <script>
-    $(document).on('click', '.tbl-avail-btn', function () {
+    // Track pending requests per table  to prevent double-submissions
+    var pendingRequests = {};
+
+    $(document).on('click', '.tbl-avail-btn', function (e) {
+        e.preventDefault();
         var btn = $(this);
         var tid = parseInt(btn.data('tid'), 10);
-        var makeAvail = btn.data('next') === true || String(btn.data('next')) === 'true';
+        var action = btn.data('action');
+        var makeAvail = action === 'mark-available';
+
+        // Check if a request is already pending for this table
+        if (pendingRequests[tid]) {
+            console.log('Request already pending for table ' + tid);
+            return;
+        }
+
+        // Mark request as pending
+        pendingRequests[tid] = true;
         btn.prop('disabled', true);
+
         $.ajax({
             type: 'POST',
             url: '/api/order/set_table_availability',
             contentType: 'application/json',
-            data: JSON.stringify({ table_list_id: tid, is_available: makeAvail })
-        }).done(function () {
-            applyCashierTableAvailRow(tid, makeAvail);
-        }).fail(function (xhr) {
-            var msg = (xhr.responseJSON && xhr.responseJSON.message) ? xhr.responseJSON.message : 'Failed to update.';
-            alert(msg);
-        }).always(function () {
-            var cell = document.querySelector('#tbl-avail-row-' + tid + ' td:last-child');
-            if (cell) {
-                var b = cell.querySelector('.tbl-avail-btn');
-                if (b) b.disabled = false;
+            data: JSON.stringify({ table_list_id: tid, is_available: makeAvail }),
+            timeout: 5000
+        })
+        .done(function (response) {
+            console.log('Success: Table ' + tid + ' updated to ' + (makeAvail ? 'Available' : 'Unavailable'));
+            updateTableRow(tid, makeAvail);
+        })
+        .fail(function (xhr, status, error) {
+            var msg = 'Failed to update table status. Please try again.';
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                msg = xhr.responseJSON.message;
+            } else if (xhr.status === 0) {
+                msg = 'Network error. Please check your connection.';
+            } else if (status === 'timeout') {
+                msg = 'Request timeout. Please try again.';
             }
+            console.error('Error updating table ' + tid + ':', error);
+            alert(msg);
+            
+            // Restore button state on error
+            var row = document.getElementById('tbl-avail-row-' + tid);
+            if (row) {
+                var button = row.querySelector('.tbl-avail-btn');
+                if (button) {
+                    button.disabled = false;
+                }
+            }
+        })
+        .always(function () {
+            // Always clear the pending flag
+            delete pendingRequests[tid];
         });
     });
 
-    function applyCashierTableAvailRow(tid, isAvailable) {
+    function updateTableRow(tid, isAvailable) {
         var row = document.getElementById('tbl-avail-row-' + tid);
         if (!row) return;
+
+        // Update status badge
         var badge = row.querySelector('.tbl-avail-badge');
         if (badge) {
             badge.className = 'badge tbl-avail-badge ' + (isAvailable ? 'badge-success' : 'badge-secondary');
             badge.textContent = isAvailable ? 'Available' : 'Unavailable';
         }
-        var cell = row.querySelector('td:last-child');
-        if (cell) {
-            cell.innerHTML = isAvailable
-                ? '<button type="button" class="btn btn-sm btn-outline-secondary tbl-avail-btn" data-tid="' + tid + '" data-next="false"><i class="fas fa-ban mr-1"></i>Mark unavailable</button>'
-                : '<button type="button" class="btn btn-sm btn-success tbl-avail-btn" data-tid="' + tid + '" data-next="true"><i class="fas fa-check mr-1"></i>Mark available</button>';
+
+        // Update action button
+        var btn = row.querySelector('.tbl-avail-btn');
+        if (btn) {
+            if (isAvailable) {
+                btn.className = 'btn btn-sm btn-success tbl-avail-btn';
+                btn.setAttribute('data-action', 'mark-unavailable');
+                btn.innerHTML = '<i class="fas fa-check mr-1"></i>Mark Unavailable';
+            } else {
+                btn.className = 'btn btn-sm btn-outline-secondary tbl-avail-btn';
+                btn.setAttribute('data-action', 'mark-available');
+                btn.innerHTML = '<i class="fas fa-ban mr-1"></i>Mark Available';
+            }
+            btn.disabled = false;
         }
     }
-
-    setTimeout(function () { location.reload(); }, 30000);
 </script>
 }
