@@ -84,7 +84,7 @@ if (app.Environment.IsDevelopment())
         var body = (await reader.ReadToEndAsync()).Trim();
         if (string.IsNullOrEmpty(body))
             return Results.BadRequest();
-        var logPath = Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "debug-417eff.log"));
+        var logPath = "/home/myat/.cursor/debug-logs/debug-0df4d3.log";
         await File.AppendAllTextAsync(logPath, body + Environment.NewLine);
         return Results.Ok();
     });

@@ -24,7 +24,7 @@ namespace FoodOutlet.Controllers
             {
                 var payload = JsonSerializer.Serialize(new
                 {
-                    sessionId = "3b1609",
+                    sessionId = "0df4d3",
                     runId,
                     hypothesisId,
                     location,
@@ -32,7 +32,7 @@ namespace FoodOutlet.Controllers
                     data,
                     timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
                 });
-                System.IO.File.AppendAllText(@"D:\MLM\Final\debug-3b1609.log", payload + Environment.NewLine);
+                System.IO.File.AppendAllText("/home/myat/.cursor/debug-logs/debug-0df4d3.log", payload + Environment.NewLine);
             }
             catch
             {
@@ -201,6 +201,9 @@ namespace FoodOutlet.Controllers
         [HttpPost("api/order/set_table_availability")]
         public IActionResult SetTableAvailability([FromBody] SetTableAvailabilityRequest? req)
         {
+            // #region agent log
+            DebugLog("post-fix", "H2", "Controllers/OrderController.cs:SetTableAvailability", "api hit", new { role = Role, req?.table_list_id, req?.is_available });
+            // #endregion
             if (req == null || req.table_list_id <= 0)
                 return BadRequest(new { success = false, message = "Invalid request." });
 
@@ -209,6 +212,9 @@ namespace FoodOutlet.Controllers
 
             var result = _staff.SetTableAvailabilityForCashier(req.table_list_id, req.is_available);
             bool ok = result.message == "Success";
+            // #region agent log
+            DebugLog("post-fix", "H2", "Controllers/OrderController.cs:SetTableAvailability", "api result", new { ok, result.message, req.table_list_id, req.is_available });
+            // #endregion
             return ok
                 ? Ok(new { success = true })
                 : StatusCode(500, new { success = false, message = result.message });

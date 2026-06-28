@@ -58,9 +58,9 @@
                                         <td class="align-middle text-right">
                                             @if (isOpen)
                                             {
-                                                <button type="button" class="btn btn-sm btn-outline-secondary tbl-avail-btn"
+                                                <button type="button" class="btn btn-sm btn-success tbl-avail-btn"
                                                         data-tid="@tid" data-action="mark-available">
-                                                    <i class="fas fa-ban mr-1"></i>Mark Available
+                                                    <i class="fas fa-check mr-1"></i>Mark Available
                                                 </button>
                                             }
                                             else
@@ -86,95 +86,112 @@
 <div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 9999;">
 </div>
 
-<!-- Toast notification container for error messages -->
-<div id="toast-container" style="position: fixed; top: 20px; right: 20px; z-index: 9999;">
-</div>
-
-@section Scripts {
 <script>
-    // Track pending requests per table  to prevent double-submissions
+(function () {
+    // #region agent log
+    function dbgLog(hypothesisId, location, message, data) {
+        var payload = JSON.stringify({ sessionId: '0df4d3', runId: 'post-fix', hypothesisId: hypothesisId, location: location, message: message, data: data || {}, timestamp: Date.now() });
+        fetch('http://127.0.0.1:7335/ingest/093ca928-03f9-49af-b8c1-b28b02424135', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '0df4d3' }, body: payload }).catch(function () {
+            fetch('/__debug/browser-log', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload }).catch(function () {});
+        });
+    }
+    // #endregion
+
     var pendingRequests = {};
 
-    $(document).on('click', '.tbl-avail-btn', function (e) {
-        e.preventDefault();
-        var btn = $(this);
-        var tid = parseInt(btn.data('tid'), 10);
-        var action = btn.data('action');
-        var makeAvail = action === 'mark-available';
-
-        // Check if a request is already pending for this table
-        if (pendingRequests[tid]) {
-            console.log('Request already pending for table ' + tid);
-            return;
-        }
-
-        // Mark request as pending
-        pendingRequests[tid] = true;
-        btn.prop('disabled', true);
-
-        $.ajax({
-            type: 'POST',
-            url: '/api/order/set_table_availability',
-            contentType: 'application/json',
-            data: JSON.stringify({ table_list_id: tid, is_available: makeAvail }),
-            timeout: 5000
-        })
-        .done(function (response) {
-            console.log('Success: Table ' + tid + ' updated to ' + (makeAvail ? 'Available' : 'Unavailable'));
-            updateTableRow(tid, makeAvail);
-        })
-        .fail(function (xhr, status, error) {
-            var msg = 'Failed to update table status. Please try again.';
-            if (xhr.responseJSON && xhr.responseJSON.message) {
-                msg = xhr.responseJSON.message;
-            } else if (xhr.status === 0) {
-                msg = 'Network error. Please check your connection.';
-            } else if (status === 'timeout') {
-                msg = 'Request timeout. Please try again.';
-            }
-            console.error('Error updating table ' + tid + ':', error);
-            alert(msg);
-            
-            // Restore button state on error
-            var row = document.getElementById('tbl-avail-row-' + tid);
-            if (row) {
-                var button = row.querySelector('.tbl-avail-btn');
-                if (button) {
-                    button.disabled = false;
-                }
-            }
-        })
-        .always(function () {
-            // Always clear the pending flag
-            delete pendingRequests[tid];
-        });
-    });
-
-    function updateTableRow(tid, isAvailable) {
+    function updateTableRow(tid, showUiAvailable) {
         var row = document.getElementById('tbl-avail-row-' + tid);
+        // #region agent log
+        dbgLog('H3', 'CashierAvailability.cshtml:updateTableRow', 'dom update attempt', { tid: tid, showUiAvailable: showUiAvailable, rowFound: !!row });
+        // #endregion
         if (!row) return;
 
-        // Update status badge
         var badge = row.querySelector('.tbl-avail-badge');
         if (badge) {
-            badge.className = 'badge tbl-avail-badge ' + (isAvailable ? 'badge-success' : 'badge-secondary');
-            badge.textContent = isAvailable ? 'Available' : 'Unavailable';
+            badge.className = 'badge tbl-avail-badge ' + (showUiAvailable ? 'badge-success' : 'badge-secondary');
+            badge.textContent = showUiAvailable ? 'Available' : 'Unavailable';
         }
 
-        // Update action button
         var btn = row.querySelector('.tbl-avail-btn');
         if (btn) {
-            if (isAvailable) {
+            if (showUiAvailable) {
                 btn.className = 'btn btn-sm btn-success tbl-avail-btn';
                 btn.setAttribute('data-action', 'mark-unavailable');
                 btn.innerHTML = '<i class="fas fa-check mr-1"></i>Mark Unavailable';
             } else {
-                btn.className = 'btn btn-sm btn-outline-secondary tbl-avail-btn';
+                btn.className = 'btn btn-sm btn-success tbl-avail-btn';
                 btn.setAttribute('data-action', 'mark-available');
-                btn.innerHTML = '<i class="fas fa-ban mr-1"></i>Mark Available';
+                btn.innerHTML = '<i class="fas fa-check mr-1"></i>Mark Available';
             }
             btn.disabled = false;
         }
+        // #region agent log
+        dbgLog('H3', 'CashierAvailability.cshtml:updateTableRow', 'dom update complete', { tid: tid, badgeText: badge ? badge.textContent : null });
+        // #endregion
     }
+
+    function onTableAvailClick(e) {
+        var btn = e.target.closest('.tbl-avail-btn');
+        if (!btn) return;
+        e.preventDefault();
+
+        var tid = parseInt(btn.getAttribute('data-tid'), 10);
+        var action = btn.getAttribute('data-action');
+        var showUiAvailable = action === 'mark-available';
+        var dbAvailable = action === 'mark-unavailable';
+
+        // #region agent log
+        dbgLog('H1', 'CashierAvailability.cshtml:click', 'button clicked', { tid: tid, action: action, showUiAvailable: showUiAvailable, dbAvailable: dbAvailable, rowFound: !!document.getElementById('tbl-avail-row-' + tid) });
+        // #endregion
+
+        if (!tid || pendingRequests[tid]) return;
+
+        pendingRequests[tid] = true;
+        btn.disabled = true;
+
+        fetch('/api/order/set_table_availability', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ table_list_id: tid, is_available: dbAvailable })
+        })
+        .then(function (res) {
+            if (!res.ok) {
+                return res.json().catch(function () { return {}; }).then(function (body) {
+                    throw new Error(body.message || 'Failed to update table status.');
+                });
+            }
+            return res.json();
+        })
+        .then(function (response) {
+            // #region agent log
+            dbgLog('H2', 'CashierAvailability.cshtml:fetch.done', 'api success', { tid: tid, showUiAvailable: showUiAvailable, dbAvailable: dbAvailable, response: response });
+            // #endregion
+            updateTableRow(tid, showUiAvailable);
+        })
+        .catch(function (err) {
+            // #region agent log
+            dbgLog('H2', 'CashierAvailability.cshtml:fetch.fail', 'api failed', { tid: tid, error: String(err) });
+            // #endregion
+            alert(err.message || 'Failed to update table status. Please try again.');
+            btn.disabled = false;
+        })
+        .finally(function () {
+            delete pendingRequests[tid];
+        });
+    }
+
+    function initTableAvailability() {
+        // #region agent log
+        dbgLog('H1', 'CashierAvailability.cshtml:init', 'script loaded', { rowCount: document.querySelectorAll('[id^="tbl-avail-row-"]').length });
+        // #endregion
+        document.removeEventListener('click', onTableAvailClick);
+        document.addEventListener('click', onTableAvailClick);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initTableAvailability);
+    } else {
+        initTableAvailability();
+    }
+})();
 </script>
-}
